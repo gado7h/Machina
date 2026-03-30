@@ -1,0 +1,8 @@
+{
+  "aliases": {
+    "src": "./src",
+  },
+  "globals": [
+    "task"
+  ]
+}

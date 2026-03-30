@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-package:
+    runs-on: ubuntu-latest
+    env:
+      MACHINA_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('ci-{0}', github.sha) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Prepare artifact directory
+        run: echo "MACHINA_ARTIFACT_DIR=$RUNNER_TEMP/machina-bundles" >> "$GITHUB_ENV"
+
+      - name: Setup Rokit
+        uses: CompeyDev/setup-rokit@v0.1.2
+        with:
+          cache: true
+
+      - name: Install toolchain
+        run: rokit install --no-trust-check
+
+      - name: Verify toolchain
+        run: |
+          rokit --version
+          lune --version
+          selene --version
+          stylua --version
+
+      - name: Lint with Selene
+        run: selene --allow-warnings src lune
+
+      - name: Check formatting with StyLua
+        run: stylua --check src lune
+
+      - name: Generate package bundles
+        run: pwsh -File tools/build-targets.ps1 -Target all -Version "${{ env.MACHINA_VERSION }}" -GitRef "${{ github.sha }}"
+
+      - name: Archive package bundles
+        run: |
+          mkdir -p "$MACHINA_ARTIFACT_DIR"
+          tar -czf "$MACHINA_ARTIFACT_DIR/machina-luau-${MACHINA_VERSION}.tar.gz" -C dist machina-luau
+          tar -czf "$MACHINA_ARTIFACT_DIR/machina-roblox-${MACHINA_VERSION}.tar.gz" -C dist machina-roblox
+
+      - name: Write artifact metadata
+        run: pwsh -File tools/write-release-metadata.ps1 -Version "${{ env.MACHINA_VERSION }}" -GitRef "${{ github.sha }}" -LuauArchive "${{ env.MACHINA_ARTIFACT_DIR }}/machina-luau-${{ env.MACHINA_VERSION }}.tar.gz" -RobloxArchive "${{ env.MACHINA_ARTIFACT_DIR }}/machina-roblox-${{ env.MACHINA_VERSION }}.tar.gz" -OutputDirectory "${{ env.MACHINA_ARTIFACT_DIR }}"
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: machina-bundles-${{ env.MACHINA_VERSION }}
+          path: ${{ env.MACHINA_ARTIFACT_DIR }}

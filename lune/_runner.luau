@@ -1,0 +1,179 @@
+local scheduler = require("@src/platforms/Task")
+
+local Runner = {}
+
+local function deepCopy(value)
+	if type(value) ~= "table" then
+		return value
+	end
+
+	local copy = {}
+	for key, child in pairs(value) do
+		copy[key] = deepCopy(child)
+	end
+	return copy
+end
+
+local function mergeInto(target, overrides)
+	for key, value in pairs(overrides or {}) do
+		if type(value) == "table" then
+			local child = target[key]
+			if type(child) ~= "table" then
+				child = {}
+				target[key] = child
+			end
+			mergeInto(child, value)
+		else
+			target[key] = value
+		end
+	end
+end
+
+local function formatResultLine(result)
+	local status = result.passed and "PASS" or "FAIL"
+	local suite = result.suite or "unknown"
+	local detail = result.detail and (" - " .. tostring(result.detail)) or ""
+	return string.format("%s [%s] %s%s", tostring(result.name), suite, status, detail)
+end
+
+function Runner.newConfig(overrides)
+	local DefaultConfiguration = require("@src/DefaultConfiguration")
+	local config = deepCopy(DefaultConfiguration)
+	mergeInto(config, overrides)
+	return config
+end
+
+function Runner.createBootMachine(overrides)
+	local PcSystem = require("@src/platforms/x86/PcSystem")
+	local config = Runner.newConfig(overrides)
+	local machine = PcSystem.new(config)
+	machine:setFramePresenter(function() end)
+	return machine, config
+end
+
+function Runner.createDiagnosticMachine(overrides)
+	local machine, config = Runner.createBootMachine(overrides)
+	machine:_buildHardware()
+	return machine, config
+end
+
+function Runner.waitForBoot(machine, options)
+	options = options or {}
+
+	local timeoutSeconds = options.timeoutSeconds or 15
+	local pollInterval = options.pollInterval or 0.05
+
+	machine:powerOn()
+
+	local deadline = os.clock() + timeoutSeconds
+	while os.clock() < deadline do
+		local bootStage = machine:getBootStage()
+		local bootRecord = machine:getBootRecord()
+
+		if bootRecord and bootRecord.imageName ~= nil and bootRecord.imageName ~= "bootOS" then
+			return false, string.format("expected bootOS image, got %s", tostring(bootRecord.imageName)), {
+				bootStage = bootStage,
+				bootRecord = bootRecord,
+			}
+		end
+
+		if bootStage == "FAULT" then
+			return false, "machine entered FAULT before boot completed", {
+				bootStage = bootStage,
+				bootRecord = bootRecord,
+			}
+		end
+
+		if bootStage == "RUNNING" then
+			local diagnostics = bootRecord and bootRecord.diagnostics or nil
+			if diagnostics == nil then
+				return false, "boot completed without boot diagnostics in the boot record", {
+					bootStage = bootStage,
+					bootRecord = bootRecord,
+				}
+			end
+			if diagnostics.passed ~= true then
+				return false,
+					string.format(
+						"boot diagnostics failed (%s/%s)",
+						tostring(diagnostics.passedCount),
+						tostring(diagnostics.totalCount)
+					),
+					{
+						bootStage = bootStage,
+						bootRecord = bootRecord,
+					}
+			end
+
+			return true,
+				string.format(
+					"bootOS reached RUNNING with diagnostics %d/%d",
+					diagnostics.passedCount,
+					diagnostics.totalCount
+				),
+				{
+					bootStage = bootStage,
+					bootRecord = bootRecord,
+				}
+		end
+
+		scheduler.wait(pollInterval)
+	end
+
+	return false, string.format("timed out after %.2fs waiting for RUNNING", timeoutSeconds), {
+		bootStage = machine:getBootStage(),
+		bootRecord = machine:getBootRecord(),
+	}
+end
+
+function Runner.printSuiteSummary(label, suite)
+	print(string.format("%s: %d/%d passed", label, suite.passedCount or 0, suite.totalCount or 0))
+	for _, result in ipairs(suite.results or {}) do
+		print("  " .. formatResultLine(result))
+	end
+end
+
+function Runner.combineSuites(suites)
+	local results = {}
+	local passedCount = 0
+
+	for _, suite in ipairs(suites) do
+		for _, result in ipairs(suite.results or {}) do
+			results[#results + 1] = result
+			if result.passed then
+				passedCount += 1
+			end
+		end
+	end
+
+	return {
+		passed = passedCount == #results,
+		passedCount = passedCount,
+		totalCount = #results,
+		results = results,
+	}
+end
+
+function Runner.fail(message, context)
+	if context and context.bootStage then
+		print("boot stage: " .. tostring(context.bootStage))
+	end
+
+	local bootRecord = context and context.bootRecord or nil
+	if bootRecord then
+		if bootRecord.imageName ~= nil then
+			print("image: " .. tostring(bootRecord.imageName))
+		end
+		if bootRecord.bootDevice ~= nil then
+			print("boot device: " .. tostring(bootRecord.bootDevice))
+		end
+		local diagnostics = bootRecord.diagnostics
+		if diagnostics then
+			Runner.printSuiteSummary("boot diagnostics", diagnostics)
+		end
+	end
+
+	error(message)
+end
+
+return Runner

@@ -1,0 +1,46 @@
+name: Validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lune-validation:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Rokit
+        uses: CompeyDev/setup-rokit@v0.1.2
+        with:
+          cache: true
+
+      - name: Install toolchain
+        run: rokit install --no-trust-check
+
+      - name: Verify toolchain
+        run: |
+          rokit --version
+          lune --version
+          selene --version
+          stylua --version
+
+      - name: Lint with Selene
+        run: selene --allow-warnings src lune
+
+      - name: Check formatting with StyLua
+        run: stylua --check src lune
+
+      - name: Run Lune smoke gate
+        run: lune run smoke
+
+      - name: Run Lune review gate
+        run: lune run review

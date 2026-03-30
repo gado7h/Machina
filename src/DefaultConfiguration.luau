@@ -1,0 +1,195 @@
+-- Central configuration for the Machina x86 PC emulator.
+-- PcSystem reads this directly. buildBoardConfig() merges Config.X86 fields
+-- on top of the defaults below, so X86 values always take precedence.
+
+local Config = {}
+
+local DISPLAY_REFRESH_HZ = 60
+local DISK_MODEL = "Machina Virtual ATA"
+local PAGE_SIZE = 4096
+
+local MEMORY_LAYOUT = {
+	ROM_BASE = 0x000F0000,
+	ROM_SIZE = 0x00010000,
+	RAM_BASE = 0x00000000,
+	RAM_SIZE = 0x000A0000,
+	HIGH_RAM_BASE = 0x00100000,
+	HIGH_RAM_SIZE = 0x00000000,
+	VRAM_BASE = 0x000A0000,
+	VRAM_SIZE = 0x00020000,
+}
+
+local DEFAULT_PIC_VECTORS = {
+	master = 0x20,
+	slave = 0x28,
+}
+
+local BIOS_PIC_VECTORS = {
+	master = 0x08,
+	slave = 0x70,
+}
+
+local VIDEO_LAYOUT = {
+	VIDEO_BASE = MEMORY_LAYOUT.VRAM_BASE,
+	VIDEO_SIZE = MEMORY_LAYOUT.VRAM_SIZE,
+	TEXT_BUFFER_BASE = 0x000B8000,
+	TEXT_BUFFER_SIZE = 0x00008000,
+}
+
+Config.EMULATION = {
+	PROFILE = "x86-bios",
+}
+
+Config.DISPLAY_REFRESH_HZ = DISPLAY_REFRESH_HZ
+
+Config.SCREEN_W = 640
+Config.SCREEN_H = 400
+Config.TEXT_COLS = 80
+Config.TEXT_ROWS = 25
+
+Config.CHAR_W = 8
+Config.CHAR_H = 16
+Config.GLYPH_W = 8
+Config.GLYPH_H = 16
+Config.PAD_X = 0
+Config.PAD_Y = 0
+Config.FONT_SMOOTHING = false
+
+-- Storage
+Config.DISK_BLOCKS = 204800
+Config.DISK_MODEL = DISK_MODEL
+
+-- Memory layout defaults
+-- These are fallbacks only. Config.X86 overrides all of them at runtime
+-- via buildBoardConfig(), so edit Config.X86 for actual values.
+Config.PAGE_SIZE = PAGE_SIZE
+
+Config.ROM_BASE = MEMORY_LAYOUT.ROM_BASE
+Config.ROM_SIZE = MEMORY_LAYOUT.ROM_SIZE
+Config.RAM_BASE = MEMORY_LAYOUT.RAM_BASE
+Config.RAM_SIZE = MEMORY_LAYOUT.RAM_SIZE
+Config.VRAM_BASE = MEMORY_LAYOUT.VRAM_BASE
+Config.VRAM_SIZE = MEMORY_LAYOUT.VRAM_SIZE
+
+-- Interrupt controller
+-- Defaults before the BIOS programs the PIC. X86 overrides these to the
+-- real BIOS values (master 0x08 / slave 0x70).
+Config.PIC_VECTOR_BASE_MASTER = DEFAULT_PIC_VECTORS.master
+Config.PIC_VECTOR_BASE_SLAVE = DEFAULT_PIC_VECTORS.slave
+
+Config.IRQ = {
+	TIMER = 0,
+	KEYBOARD = 1,
+	COM1 = 4,
+	RTC = 8,
+	FLOPPY = 6,
+	ATA = 14,
+}
+
+Config.TIMER = {
+	BASE_HZ = 1193182,
+	DEFAULT_DIVISOR = 65536,
+}
+
+-- I/O port
+Config.PORT = {
+	PIC_MASTER_CMD = 0x0020,
+	PIC_MASTER_DATA = 0x0021,
+	PIC_SLAVE_CMD = 0x00A0,
+	PIC_SLAVE_DATA = 0x00A1,
+
+	PIT_CHAN0 = 0x0040,
+	PIT_CMD = 0x0043,
+
+	KBD_DATA = 0x0060,
+	KBD_STATUS = 0x0064,
+
+	RTC_INDEX = 0x0070,
+	RTC_DATA = 0x0071,
+
+	VGA_ATTR_INDEX = 0x03C0,
+	VGA_ATTR_DATA_READ = 0x03C1,
+	VGA_MISC_WRITE = 0x03C2,
+	VGA_SEQ_INDEX = 0x03C4,
+	VGA_SEQ_DATA = 0x03C5,
+	VGA_DAC_MASK = 0x03C6,
+	VGA_DAC_READ_INDEX = 0x03C7,
+	VGA_DAC_WRITE_INDEX = 0x03C8,
+	VGA_DAC_DATA = 0x03C9,
+	VGA_MISC_READ = 0x03CC,
+	VGA_GC_INDEX = 0x03CE,
+	VGA_GC_DATA = 0x03CF,
+	VGA_CRTC_INDEX = 0x03D4,
+	VGA_CRTC_DATA = 0x03D5,
+	VGA_INPUT_STATUS1 = 0x03DA,
+
+	COM1_BASE = 0x03F8,
+
+	IDE_PRIMARY_CMD = 0x01F0,
+	IDE_PRIMARY_CTRL = 0x03F6,
+}
+
+-- x86 BIOS subsystem
+Config.X86 = {
+	MACHINE_PROFILE = "ibm-pc-386-bios-v2",
+	HEARTBEAT_HZ = DISPLAY_REFRESH_HZ,
+	BOOT_CYCLES_PER_TICK = 1536,
+	RUN_CYCLES_PER_TICK = 1024,
+
+	ROM_BASE = MEMORY_LAYOUT.ROM_BASE,
+	ROM_SIZE = MEMORY_LAYOUT.ROM_SIZE,
+
+	LOW_RAM_BASE = MEMORY_LAYOUT.RAM_BASE,
+	LOW_RAM_SIZE = MEMORY_LAYOUT.RAM_SIZE,
+	HIGH_RAM_BASE = MEMORY_LAYOUT.HIGH_RAM_BASE,
+	HIGH_RAM_SIZE = MEMORY_LAYOUT.HIGH_RAM_SIZE,
+
+	VIDEO_BASE = VIDEO_LAYOUT.VIDEO_BASE,
+	VIDEO_SIZE = VIDEO_LAYOUT.VIDEO_SIZE,
+	TEXT_BUFFER_BASE = VIDEO_LAYOUT.TEXT_BUFFER_BASE,
+	TEXT_BUFFER_SIZE = VIDEO_LAYOUT.TEXT_BUFFER_SIZE,
+
+	RESET_VECTOR_SEG = 0xF000,
+	RESET_VECTOR_OFF = 0xFFF0,
+	BIOS_ENTRY_OFFSET = 0x0100,
+
+	BOOT_DRIVE = 0x00,
+	BOOT_ORDER = { "floppy", "ata" },
+	BOOT_SECTOR_LOAD_SEG = 0x0000,
+	BOOT_SECTOR_LOAD_OFF = 0x7C00,
+	KERNEL_LOAD_SEG = 0x1000,
+	KERNEL_LOAD_OFF = 0x0000,
+
+	SECTORS_PER_TRACK = 18,
+	HEADS = 1,
+
+	FLOPPY_A_PRESENT = true,
+	FLOPPY_A_TYPE = "35_1440k",
+	FLOPPY_TRACKS = 80,
+	FLOPPY_HEADS = 2,
+	FLOPPY_SECTORS = 18,
+
+	PIC_VECTOR_BASE_MASTER = BIOS_PIC_VECTORS.master,
+	PIC_VECTOR_BASE_SLAVE = BIOS_PIC_VECTORS.slave,
+
+	IMAGE = {
+		SOURCE = "provider",
+		PROVIDER = "bootOS",
+	},
+
+	DIAGNOSTICS = {
+		ENABLED = true,
+		PRINT_SUMMARY = true,
+	},
+
+	TRACE = {
+		ENABLED = false,
+		CPU_STATE = false,
+		IRQ_ROUTING = false,
+		PORT_IO = false,
+		BIOS_CALLS = false,
+		DISK = false,
+	},
+}
+
+return Config
