@@ -36,6 +36,45 @@ local function formatResultLine(result)
 	return string.format("%s [%s] %s%s", tostring(result.name), suite, status, detail)
 end
 
+local function formatEvidenceLines(result)
+	local evidence = result and result.evidence or nil
+	if type(evidence) ~= "table" then
+		return {}
+	end
+
+	local lines = {}
+	local cpu = evidence.cpu
+	if type(cpu) == "table" then
+		local lastOpcode = cpu.lastOpcode
+		local opcodeWidth = (tonumber(lastOpcode) or 0) > 0xFF and 4 or 2
+		lines[#lines + 1] = string.format(
+			"cpu: mode=%s pc=%s cs=%s ip=%s last=%s halted=%s",
+			tostring(cpu.mode or "?"),
+			string.format("0x%05X", (tonumber(cpu.pc) or 0) % 0x100000),
+			string.format("0x%04X", (tonumber(cpu.cs) or 0) % 0x10000),
+			string.format("0x%04X", (tonumber(cpu.ip) or 0) % 0x10000),
+			string.format("0x%0" .. tostring(opcodeWidth) .. "X", (tonumber(lastOpcode) or 0) % (2 ^ (opcodeWidth * 4))),
+			tostring(cpu.halted == true)
+		)
+	end
+	if evidence.screen then
+		lines[#lines + 1] = "screen: " .. tostring(evidence.screen)
+	end
+	if evidence.error then
+		lines[#lines + 1] = "error: " .. tostring(evidence.error)
+	end
+	if type(evidence.fault) == "table" then
+		lines[#lines + 1] = string.format(
+			"fault: kind=%s addr=%s op=%s detail=%s",
+			tostring(evidence.fault.kind),
+			string.format("0x%05X", (tonumber(evidence.fault.addr) or 0) % 0x100000),
+			tostring(evidence.fault.op),
+			tostring(evidence.fault.detail)
+		)
+	end
+	return lines
+end
+
 function Runner.newConfig(overrides)
 	local DefaultConfiguration = require("@src/DefaultConfiguration")
 	local config = deepCopy(DefaultConfiguration)
@@ -130,6 +169,11 @@ function Runner.printSuiteSummary(label, suite)
 	print(string.format("%s: %d/%d passed", label, suite.passedCount or 0, suite.totalCount or 0))
 	for _, result in ipairs(suite.results or {}) do
 		print("  " .. formatResultLine(result))
+		if not result.passed then
+			for _, line in ipairs(formatEvidenceLines(result)) do
+				print("    " .. line)
+			end
+		end
 	end
 end
 

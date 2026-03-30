@@ -86,6 +86,7 @@ function Cpu8086.new(bus, config)
 		ip = 0,
 	}
 	self._segmentOverride = nil
+	self._interruptShadow = 0
 	self.stats = {
 		cycles = 0,
 		instructions = 0,
@@ -114,6 +115,7 @@ function Cpu8086:reset()
 	self.ip = self.x86.RESET_VECTOR_OFF or 0xFFF0
 	self.flags = 0x0002
 	self.halted = false
+	self._interruptShadow = 0
 	self._lastError = nil
 	self._lastStep.opcode = nil
 	self._lastStep.cs = self.seg.CS
@@ -121,6 +123,12 @@ function Cpu8086:reset()
 	self._segmentOverride = nil
 	for name in pairs(self.stats) do
 		self.stats[name] = 0
+	end
+end
+
+function Cpu8086:_advanceInterruptShadow()
+	if (self._interruptShadow or 0) > 0 then
+		self._interruptShadow = self._interruptShadow - 1
 	end
 end
 
@@ -909,6 +917,9 @@ function Cpu8086:_serviceExternalInterrupt()
 	if not self:getFlag(FLAG_IF) then
 		return false
 	end
+	if (self._interruptShadow or 0) > 0 then
+		return false
+	end
 	if not self.bus or type(self.bus.getPendingInterruptVector) ~= "function" then
 		return false
 	end
@@ -960,6 +971,8 @@ function Cpu8086:step()
 		return "INT"
 	end
 
+	self:_advanceInterruptShadow()
+
 	if self.halted then
 		return "HLT"
 	end
@@ -998,8 +1011,10 @@ function Cpu8086:step()
 		self:setFlag(FLAG_CF, true)
 	elseif opcode == 0xFA then
 		self:setFlag(FLAG_IF, false)
+		self._interruptShadow = 0
 	elseif opcode == 0xFB then
 		self:setFlag(FLAG_IF, true)
+		self._interruptShadow = 1
 	elseif opcode == 0xFC then
 		self:setFlag(FLAG_DF, false)
 	elseif opcode == 0xFD then

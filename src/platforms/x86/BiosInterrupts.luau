@@ -53,6 +53,25 @@ local SEG = {
 	DS = 3,
 }
 
+local BIOS_TICKS_DWORD = 0x046C
+local BIOS_MIDNIGHT_FLAG = 0x0470
+local BIOS_TICKS_PER_DAY = 0x1800B0
+
+local function readDword(cpu, address)
+	return cpu:readPhysical8(address)
+		+ cpu:readPhysical8(address + 1) * 0x100
+		+ cpu:readPhysical8(address + 2) * 0x10000
+		+ cpu:readPhysical8(address + 3) * 0x1000000
+end
+
+local function writeDword(cpu, address, value)
+	local dword = (tonumber(value) or 0) % 0x100000000
+	cpu:writePhysical8(address, dword % 256)
+	cpu:writePhysical8(address + 1, math.floor(dword / 256) % 256)
+	cpu:writePhysical8(address + 2, math.floor(dword / 65536) % 256)
+	cpu:writePhysical8(address + 3, math.floor(dword / 16777216) % 256)
+end
+
 function BiosInterrupts.new(machine, runtime, image)
 	local self = setmetatable({}, BiosInterrupts)
 	self.machine = machine
@@ -213,7 +232,7 @@ function BiosInterrupts:_encodeChsFields(cylinders, heads, sectorsPerTrack)
 end
 
 function BiosInterrupts:_hasAtaDrive()
-	return self.machine.hdd ~= nil
+	return MachineProfile.validateConfig(self.config).ata.present and self.machine.hdd ~= nil
 end
 
 function BiosInterrupts:_hasFloppyDrive()
@@ -659,11 +678,12 @@ function BiosInterrupts:_clockInterrupt(cpu)
 	local service = cpu:getReg8(REG8.AH)
 	self:_traceLog("BIOS_CALLS", string.format("INT 1Ah service=%02Xh", service))
 	if service == 0x00 then
-		local rtc = self.machine.rtc
-		local ticks = (rtc and rtc.getBIOSClockTicks and rtc:getBIOSClockTicks())
-			or math.floor((os.clock() - (self.machine._uptimeStart or os.clock())) * 18.2)
+		local ticks = readDword(cpu, BIOS_TICKS_DWORD)
+		local rollover = cpu:readPhysical8(BIOS_MIDNIGHT_FLAG)
 		cpu:setReg16(REG16.CX, math.floor(ticks / 0x10000))
 		cpu:setReg16(REG16.DX, ticks % 0x10000)
+		cpu:setReg8(REG8.AL, rollover)
+		cpu:writePhysical8(BIOS_MIDNIGHT_FLAG, 0x00)
 		self:_setCarry(cpu, false)
 		return true
 	end
@@ -696,8 +716,10 @@ end
 function BiosInterrupts:_systemConfigInterrupt(cpu)
 	local service = cpu:getReg8(REG8.AH)
 	if service == 0xC0 then
+		local biosSymbols = self.image and self.image.symbols and self.image.symbols.bios or nil
+		local tableOffset = (biosSymbols and biosSymbols.SYS_CONFIG_TABLE) or 0xE980
 		cpu:setSeg(SEG.ES, 0xF000)
-		cpu:setReg16(REG16.BX, 0xE980)
+		cpu:setReg16(REG16.BX, tableOffset % 0x10000)
 		cpu:setReg8(REG8.AH, 0x00)
 		self:_setCarry(cpu, false)
 		return true
@@ -731,6 +753,58 @@ function BiosInterrupts:_systemConfigInterrupt(cpu)
 		return true
 	end
 	return false
+end
+
+function BiosInterrupts:_incrementBiosTickCounter(cpu)
+	local ticks = readDword(cpu, BIOS_TICKS_DWORD) + 1
+	local midnightRollovers = 0
+	while ticks >= BIOS_TICKS_PER_DAY do
+		ticks = ticks - BIOS_TICKS_PER_DAY
+		midnightRollovers = midnightRollovers + 1
+	end
+	writeDword(cpu, BIOS_TICKS_DWORD, ticks)
+	if midnightRollovers > 0 then
+		local current = cpu:readPhysical8(BIOS_MIDNIGHT_FLAG)
+		cpu:writePhysical8(BIOS_MIDNIGHT_FLAG, (current + midnightRollovers) % 0x100)
+	end
+end
+
+function BiosInterrupts:_usesDefaultInterruptHandler(cpu, vector)
+	local biosSymbols = self.image and self.image.symbols and self.image.symbols.bios or nil
+	local defaultHandler = (biosSymbols and biosSymbols.DEFAULT_INT_HANDLER) or (self.x86.BIOS_ENTRY_OFFSET or 0x0100)
+	local romBase = self.x86.ROM_BASE or self.config.ROM_BASE or 0xF0000
+	local romSegment = math.floor(romBase / 16) % 0x10000
+	local ivtOffset = ((tonumber(vector) or 0) % 0x100) * 4
+	local offset = cpu:readPhysical8(ivtOffset) + cpu:readPhysical8(ivtOffset + 1) * 0x100
+	local segment = cpu:readPhysical8(ivtOffset + 2) + cpu:readPhysical8(ivtOffset + 3) * 0x100
+	return offset == (defaultHandler % 0x10000) and segment == romSegment
+end
+
+function BiosInterrupts:_handleHardwareInterrupt(cpu, vector)
+	local masterBase = self.x86.PIC_VECTOR_BASE_MASTER or self.config.PIC_VECTOR_BASE_MASTER or 0x08
+	local slaveBase = self.x86.PIC_VECTOR_BASE_SLAVE or self.config.PIC_VECTOR_BASE_SLAVE or 0x70
+	local isMasterIrq = vector >= masterBase and vector < (masterBase + 8)
+	local isSlaveIrq = vector >= slaveBase and vector < (slaveBase + 8)
+
+	if not isMasterIrq and not isSlaveIrq then
+		return false
+	end
+	if not self:_usesDefaultInterruptHandler(cpu, vector) then
+		return false
+	end
+
+	if vector == masterBase then
+		self:_incrementBiosTickCounter(cpu)
+	elseif vector == slaveBase then
+		if self.machine.rtc and type(self.machine.rtc.readRegister) == "function" then
+			self.machine.rtc:readRegister(0x0C)
+		end
+	end
+
+	if self.machine.bus and type(self.machine.bus.endOfInterrupt) == "function" then
+		self.machine.bus:endOfInterrupt(vector)
+	end
+	return true
 end
 
 function BiosInterrupts:_a20Interrupt(cpu)
@@ -848,6 +922,9 @@ function BiosInterrupts:handleInterrupt(cpu, vector)
 	end
 	if vector == 0x1A then
 		return self:_clockInterrupt(cpu)
+	end
+	if self:_handleHardwareInterrupt(cpu, vector) then
+		return true
 	end
 	return false
 end

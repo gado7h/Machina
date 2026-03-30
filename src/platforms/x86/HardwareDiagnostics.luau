@@ -49,6 +49,25 @@ local function formatHex(value, width)
 	return string.format("0x%0" .. tostring(digits) .. "X", (tonumber(value) or 0) % (2 ^ (digits * 4)))
 end
 
+local function captureCpuState(machine)
+	local cpu = machine and machine.cpu
+	if not cpu or type(cpu.getStats) ~= "function" then
+		return nil
+	end
+	local stats = cpu:getStats()
+	return {
+		mode = stats.mode,
+		pc = stats.pc,
+		cs = stats.cs,
+		ip = stats.ip,
+		eip = stats.eip,
+		lastOpcode = stats.lastOpcode,
+		lastCS = stats.lastCS,
+		lastIP = stats.lastIP,
+		halted = cpu.halted == true,
+	}
+end
+
 local function decodeRTCValue(value, binaryMode)
 	local byteValue = (tonumber(value) or 0) % 0x100
 	if binaryMode then
@@ -100,9 +119,17 @@ local function testPIT(machine, config)
 	local picSnapshot = snapshotPIC(bus.pic)
 	local timerChannels = deepCopy(timer._channels)
 	local timerSubTicks = timer._subTicks
+	local timerEnabled = timer._enabled
+	local timerIrqEnabled = timer._irqEnabled
 	local timerStats = copyStats(timer)
 	local busStats = copyStats(bus)
 
+	timer._enabled = true
+	timer._irqEnabled = true
+	bus.pic.master.irr = 0x00
+	bus.pic.master.isr = 0x00
+	bus.pic.slave.irr = 0x00
+	bus.pic.slave.isr = 0x00
 	bus.pic.master.imr = 0x00
 	bus.pic.slave.imr = 0x00
 	bus:portWrite(config.PORT.PIT_CMD, 0x34)
@@ -125,6 +152,8 @@ local function testPIT(machine, config)
 
 	timer._channels = deepCopy(timerChannels)
 	timer._subTicks = timerSubTicks
+	timer._enabled = timerEnabled
+	timer._irqEnabled = timerIrqEnabled
 	restoreStats(timer, timerStats)
 	restorePIC(bus.pic, picSnapshot)
 	restoreStats(bus, busStats)
@@ -833,7 +862,13 @@ local function runValidationImage(machine, config, imageName, expectedPassText, 
 				return machine.cpu:step()
 			end)
 			if not stepOk then
-				return false, tostring(result)
+				return false, tostring(result), {
+					image = imageName,
+					bootDevice = bootDevice,
+					error = tostring(result),
+					step = step,
+					cpu = captureCpuState(machine),
+				}
 			end
 
 			if step % checkInterval == 0 or result == "HLT" then
@@ -846,6 +881,18 @@ local function runValidationImage(machine, config, imageName, expectedPassText, 
 						passText = expectedPassText,
 						step = step,
 					}
+				end
+				if string.find(text, "FAIL", 1, true) then
+					local cpuState = captureCpuState(machine)
+					return false,
+						string.format("screen reported failure: %s", text:sub(1, 256)),
+						{
+							image = imageName,
+							bootDevice = bootDevice,
+							screen = text:sub(1, 256),
+							step = step,
+							cpu = cpuState,
+						}
 				end
 			end
 
@@ -874,6 +921,7 @@ local function runValidationImage(machine, config, imageName, expectedPassText, 
 			image = imageName,
 			bootDevice = bootDevice,
 			screen = text:sub(1, 256),
+			cpu = captureCpuState(machine),
 		}
 	end)
 	restoreMachine(machine, snapshot)
@@ -890,6 +938,7 @@ local function runValidationImage(machine, config, imageName, expectedPassText, 
 		return false, tostring(passed), {
 			image = imageName,
 			error = tostring(passed),
+			cpu = captureCpuState(machine),
 		}
 	end
 	return passed, detail, evidence
@@ -899,9 +948,21 @@ local function runValidationSet(machine, config, entries, defaultSuite)
 	local results = {}
 	local passedCount = 0
 	for _, entry in ipairs(entries) do
+		local suiteName = entry.suite or defaultSuite
+		local startedAt = os.clock()
+		print(string.format("  [%s] %s...", suiteName, entry.name))
 		local result = wrapTest(entry.name, entry.suite or defaultSuite, function()
 			return runValidationImage(machine, config, entry.image, entry.passText, entry.options)
 		end)
+		print(
+			string.format(
+				"  [%s] %s %s (%.2fs)",
+				suiteName,
+				entry.name,
+				result.passed and "PASS" or "FAIL",
+				os.clock() - startedAt
+			)
+		)
 		results[#results + 1] = result
 		if result.passed then
 			passedCount = passedCount + 1

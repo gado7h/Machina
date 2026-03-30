@@ -31,6 +31,7 @@ local function buildProtectedModeValidationKernel(config, passText, options)
 
 	local lines = {
 		"ORG 0x0500",
+		"BITS 16",
 		"START:",
 		"  CLI",
 		"  LGDT [GDT_DESC]",
@@ -41,6 +42,7 @@ local function buildProtectedModeValidationKernel(config, passText, options)
 		"  DW PM_ENTRY",
 		"  DW 0x0008",
 		"PM_ENTRY:",
+		"  BITS 32",
 		"  MOV AX, 0x0010",
 		"  MOV DS, AX",
 		"  MOV SS, AX",
@@ -204,6 +206,7 @@ local function buildCpuExceptionValidation(config)
 		},
 		handlerLines = {
 			"PM_EXCEPTION_HANDLER:",
+			"  ADD DWORD [ESP], 2",
 			"  MOV BYTE [EX_FLAG], 1",
 			"  IRET",
 			"PM_FAIL:",
@@ -228,7 +231,7 @@ local function buildPrivilegeTransitionKernelSource(config, tssBase)
 	local userData = Utils.descriptorWords(0, 0xF2, 0x000FFFFF, 0x0C)
 	local videoData = Utils.descriptorWords(
 		x86.TEXT_BUFFER_BASE or 0xB8000,
-		0x92,
+		0xF2,
 		math.max(0, (x86.TEXT_BUFFER_SIZE or 0x8000) - 1),
 		0x04
 	)
@@ -236,22 +239,24 @@ local function buildPrivilegeTransitionKernelSource(config, tssBase)
 
 	local lines = {
 		"ORG 0x0500",
+		"BITS 16",
 		"START:",
 		"  CLI",
 		"  LGDT [GDT_DESC]",
 		"  LIDT [IDT_DESC]",
-		"  MOV AX, 0x0030",
-		"  DB 0x0F, 0x00, 0xD8",
 		"  MOV AX, 1",
 		"  LMSW AX",
 		"  DB 0xEA",
-		"  DD PM_ENTRY",
+		"  DW PM_ENTRY",
 		"  DW 0x0008",
 		"PM_ENTRY:",
+		"  BITS 32",
 		"  MOV AX, 0x0010",
 		"  MOV DS, AX",
 		"  MOV SS, AX",
 		"  MOV ESP, 0x00007B00",
+		"  MOV AX, 0x0030",
+		"  DB 0x0F, 0x00, 0xD8",
 		"  MOV AX, 0x0018",
 		"  MOV ES, AX",
 		"  XOR EDI, EDI",
@@ -336,9 +341,9 @@ local function buildPrivilegeTransitionKernelSource(config, tssBase)
 	lines[#lines + 1] = "IDT:"
 	for vector = 0, 0x31 do
 		if vector == 0x31 then
-			lines[#lines + 1] = "  DW PM_PRIV_HANDLER, 0x0008, 0x0000, 0xEE00, 0x0000"
+			lines[#lines + 1] = "  DW PM_PRIV_HANDLER, 0x0008, 0xEE00, 0x0000"
 		else
-			lines[#lines + 1] = "  DW 0x0000, 0x0000, 0x0000, 0x0000, 0x0000"
+			lines[#lines + 1] = "  DW 0x0000, 0x0000, 0x0000, 0x0000"
 		end
 	end
 	lines[#lines + 1] = "IDT_DESC:"
@@ -389,7 +394,32 @@ local function buildPrivilegeTransitionValidation(config)
 end
 
 local function buildBiosBootValidation(config)
-	local kernelSource = Utils.buildTextValidationBootSource("bios boot validation PASS")
+	local kernelSource = table.concat({
+		"ORG 0x0500",
+		"START:",
+		"  XOR AX, AX",
+		"  MOV DS, AX",
+		"  MOV ES, AX",
+		"  MOV AX, 0x0003",
+		"  INT 0x10",
+		"  MOV SI, PASS_MSG",
+		"  CALL PRINT_STRING",
+		"HANG:",
+		"  HLT",
+		"  JMP HANG",
+		"PRINT_STRING:",
+		"  MOV AL, [SI]",
+		"  CMP AL, 0",
+		"  JE PRINT_DONE",
+		"  MOV AH, 0x0E",
+		"  INT 0x10",
+		"  INC SI",
+		"  JMP PRINT_STRING",
+		"PRINT_DONE:",
+		"  RET",
+		"PASS_MSG:",
+		'  DB "bios boot validation PASS", 13, 10, 0',
+	}, "\n")
 	return Utils.buildLoadedBootImage(config, "BiosBootValidation", kernelSource, {
 		kernelOrigin = 0x0500,
 		bootMessage = "bios boot validation",
@@ -407,9 +437,9 @@ local function buildInterruptIntegrationValidation(config)
 		"  MOV SS, AX",
 		"  MOV SP, 0x7B00",
 		"  MOV AX, IRQ0_HANDLER",
-		"  MOV [IRQ0_VECTOR], AX",
-		"  MOV AX, 0x0000",
-		"  MOV [IRQ0_VECTOR + 2], AX",
+		"  MOV [0x0020], AX",
+		"  XOR AX, AX",
+		"  MOV [0x0022], AX",
 		"  XOR AL, AL",
 		"  OUT 0x21, AL",
 		"  OUT 0xA1, AL",
@@ -443,8 +473,6 @@ local function buildInterruptIntegrationValidation(config)
 		"  JMP PRINT_STRING",
 		"PRINT_DONE:",
 		"  RET",
-		"IRQ0_VECTOR:",
-		"  DW 0x0000, 0x0000",
 		"IRQ_FLAG:",
 		"  DB 0",
 		"PASS_MSG:",
@@ -1282,6 +1310,7 @@ local function buildCpuRealModeFidelityValidation(config)
 		"  JNE FAIL",
 		"  XOR AX, AX",
 		"  MOV SS, AX",
+		"  JMP AFTER_POINTERS",
 		"PTR_LES:",
 		"  DW 0x0040, 0x1200",
 		"PTR_LDS:",
@@ -1292,6 +1321,7 @@ local function buildCpuRealModeFidelityValidation(config)
 		"  DW 0x0000, 0x1500",
 		"PTR_LSS:",
 		"  DW 0x2222, 0x1800",
+		"AFTER_POINTERS:",
 	})
 	return Utils.buildLoadedBootImage(config, "CpuRealModeFidelityValidation", kernelSource, {
 		kernelOrigin = 0x0500,
@@ -1320,6 +1350,7 @@ local function buildProtectedModeSegmentValidation(config)
 	}
 	local lines = {
 		"ORG 0x0500",
+		"BITS 16",
 		"START:",
 		"  CLI",
 		"  LGDT [GDT_DESC]",
@@ -1330,6 +1361,7 @@ local function buildProtectedModeSegmentValidation(config)
 		"  DW PM_ENTRY",
 		"  DW 0x0008",
 		"PM_ENTRY:",
+		"  BITS 32",
 		"  MOV AX, 0x0010",
 		"  MOV DS, AX",
 		"  MOV SS, AX",
@@ -1382,10 +1414,15 @@ local function buildProtectedModeSegmentValidation(config)
 		"  DW 0x2000",
 		"  CMP AL, 0x66",
 		"  JNE PM_FAIL",
-		"  MOV BYTE [FAULT_PHASE], 3",
+		"  DB 0x36, 0x67, 0xC6, 0x06",
+		"  DW FAULT_PHASE",
+		"  DB 0x03",
 		"  XOR EAX, EAX",
-		"  MOV [FAULT_SKIP], EAX",
-		"  ADD DWORD [FAULT_SKIP], 4",
+		"  DB 0x36, 0x67, 0xA3",
+		"  DW FAULT_SKIP",
+		"  DB 0x36, 0x67, 0x81, 0x06",
+		"  DW FAULT_SKIP",
+		"  DD 4",
 		"  DB 0x67, 0xA0",
 		"  DW 0x0100",
 		"  CMP BYTE [EXPAND_GP_FLAG], 1",

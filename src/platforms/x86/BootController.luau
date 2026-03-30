@@ -37,6 +37,14 @@ local function writeWord(cpu, address, value)
 	cpu:writePhysical8(address + 1, math.floor(word / 256) % 256)
 end
 
+local function writeDword(cpu, address, value)
+	local dword = (tonumber(value) or 0) % 0x100000000
+	cpu:writePhysical8(address, dword % 256)
+	cpu:writePhysical8(address + 1, math.floor(dword / 256) % 256)
+	cpu:writePhysical8(address + 2, math.floor(dword / 65536) % 256)
+	cpu:writePhysical8(address + 3, math.floor(dword / 16777216) % 256)
+end
+
 function BootController.new(machine)
 	local self = setmetatable({}, BootController)
 	self.machine = machine
@@ -381,12 +389,14 @@ function BootController:_initializeBDA()
 	cpu:writePhysical8(0x0440, 0x00)
 	cpu:writePhysical8(0x0441, 0x00)
 	cpu:writePhysical8(0x0447, 0x03)
+	writeDword(cpu, 0x046C, self.machine.rtc and self.machine.rtc.getBIOSClockTicks and self.machine.rtc:getBIOSClockTicks() or 0)
+	cpu:writePhysical8(0x0470, 0x00)
 	writeWord(cpu, 0x044A, cols)
 	writeWord(cpu, 0x044C, 0x1000)
 	writeWord(cpu, 0x044E, 0x0000)
 	cpu:writePhysical8(0x0462, 0x00)
 	writeWord(cpu, 0x0463, 0x03D4)
-	cpu:writePhysical8(0x0475, self.machine.hdd and 0x01 or 0x00)
+	cpu:writePhysical8(0x0475, profile.ata.present and 0x01 or 0x00)
 	cpu:writePhysical8(0x0484, math.max(0, rows - 1))
 	cpu:writePhysical8(0x0485, charHeight)
 	cpu:writePhysical8(0x0487, 0x60)

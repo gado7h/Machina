@@ -289,6 +289,7 @@ function VgaAdapter.new(config)
 	for index = 0, 8 do
 		self._graphics[index] = 0
 	end
+	self._graphics[0x08] = 0xFF
 	self._attribute = {}
 	for index = 0, 0x14 do
 		self._attribute[index] = 0
@@ -1324,6 +1325,7 @@ function VgaAdapter:biosSetVideoMode(mode)
 		self._graphics[0x06] = 0x0C
 		self:clearScreen(0x07)
 	end
+	self._graphics[0x08] = 0xFF
 
 	self.stats.modeChanges = self.stats.modeChanges + 1
 	self._dirty = true

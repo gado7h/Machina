@@ -40,7 +40,7 @@ local SEGREG = {
 	DS = 3,
 }
 
-local MEM_BASE = {
+local MEM_BASE16 = {
 	["BX+SI"] = 0,
 	["BX+DI"] = 1,
 	["BP+SI"] = 2,
@@ -49,6 +49,17 @@ local MEM_BASE = {
 	DI = 5,
 	BP = 6,
 	BX = 7,
+}
+
+local MEM_BASE32 = {
+	EAX = 0,
+	ECX = 1,
+	EDX = 2,
+	EBX = 3,
+	ESP = 4,
+	EBP = 5,
+	ESI = 6,
+	EDI = 7,
 }
 
 local function trim(text)
@@ -215,9 +226,14 @@ local function parseOperand(raw)
 	end
 	if text:sub(1, 1) == "[" and text:sub(-1) == "]" then
 		local inner = trim(text:sub(2, -2))
-		local base = MEM_BASE[upper(inner)]
+		local innerUpper = upper(inner)
+		local base = MEM_BASE16[innerUpper]
 		if base ~= nil then
-			return { kind = "mem", base = base, mode = "base", width = width }
+			return { kind = "mem", base = base, mode = "base16", width = width, addressWidth = 16 }
+		end
+		base = MEM_BASE32[innerUpper]
+		if base ~= nil then
+			return { kind = "mem", base = base, mode = "base32", width = width, addressWidth = 32 }
 		end
 		return { kind = "mem", expr = inner, mode = "direct", width = width }
 	end
@@ -277,8 +293,20 @@ local function controlTransferWidth(operand, default32)
 	return operandWidth(operand, default32) or operand.width or (default32 and 32 or 16)
 end
 
+local function immediateDefaultWidth(operand, default32)
+	if operand and operand.width then
+		return operand.width
+	end
+	return default32 and 32 or 16
+end
+
 local function needsAddressPrefix(operand, default32)
-	return default32 and operand and operand.kind == "mem"
+	if not operand or operand.kind ~= "mem" then
+		return false
+	end
+	local addressWidth = operand.addressWidth or 16
+	local defaultAddressWidth = default32 and 32 or 16
+	return addressWidth ~= defaultAddressWidth
 end
 
 local function emitPrefixes(bytes, addressOperand, width, default32)
@@ -295,6 +323,29 @@ local function modrm(mod, reg, rm)
 end
 
 local function encodeMem(bytes, operand, regField, symbols, currentAddress, origin)
+	local addressWidth = operand.addressWidth or 16
+	if addressWidth == 32 then
+		if operand.mode == "direct" then
+			bytes[#bytes + 1] = modrm(0, regField, 5)
+			encodeDword(bytes, evalExpr(operand.expr, symbols, currentAddress, origin))
+			return
+		end
+
+		local rm = operand.base
+		if rm == 4 then
+			bytes[#bytes + 1] = modrm(0, regField, 4)
+			bytes[#bytes + 1] = 0x24
+			return
+		end
+		if rm == 5 then
+			bytes[#bytes + 1] = modrm(1, regField, rm)
+			bytes[#bytes + 1] = 0
+			return
+		end
+		bytes[#bytes + 1] = modrm(0, regField, rm)
+		return
+	end
+
 	if operand.mode == "direct" then
 		bytes[#bytes + 1] = modrm(0, regField, 6)
 		encodeWord(bytes, evalExpr(operand.expr, symbols, currentAddress, origin))
@@ -311,6 +362,16 @@ local function encodeMem(bytes, operand, regField, symbols, currentAddress, orig
 end
 
 local function memSize(operand)
+	local addressWidth = operand.addressWidth or 16
+	if addressWidth == 32 then
+		if operand.mode == "direct" then
+			return 5
+		end
+		if operand.base == 4 or operand.base == 5 then
+			return 2
+		end
+		return 1
+	end
 	if operand.mode == "direct" then
 		return 3
 	end
@@ -330,6 +391,8 @@ local function estimateInstruction(name, operands, default32)
 		or name == "RET"
 		or name == "RETF"
 		or name == "IRET"
+		or name == "SAHF"
+		or name == "LAHF"
 		or name == "CLI"
 		or name == "STI"
 		or name == "HLT"
@@ -389,7 +452,8 @@ local function estimateInstruction(name, operands, default32)
 		local width = operandWidth(op, default32)
 		local prefix = needsOperandPrefix(width, default32) and 1 or 0
 		if op and op.kind == "imm" then
-			return prefix + (default32 and 5 or 3)
+			local immWidth = immediateDefaultWidth(op, default32)
+			return (needsOperandPrefix(immWidth, default32) and 1 or 0) + 1 + (immWidth == 32 and 4 or 2)
 		end
 		return prefix + 1
 	end
@@ -465,6 +529,49 @@ local function estimateInstruction(name, operands, default32)
 				+ 1
 				+ memSize(dst)
 				+ immSize
+		end
+	end
+	if name == "OR" or name == "AND" then
+		local dst = operands[1]
+		local src = operands[2]
+		if not dst or not src then
+			return 0
+		end
+		if src.kind == "imm" then
+			local width = operandWidth(dst, default32) or 8
+			local immSize = width == 32 and 4 or width == 16 and 2 or 1
+			return (needsAddressPrefix(dst, default32) and 1 or 0)
+				+ (needsOperandPrefix(width, default32) and 1 or 0)
+				+ 1
+				+ ((dst.kind == "mem" and memSize(dst)) or 1)
+				+ immSize
+		end
+		if (dst.kind == "reg16" or dst.kind == "reg32") and (src.kind == "reg16" or src.kind == "reg32") then
+			local width = operandWidth(dst, default32)
+			return (needsOperandPrefix(width, default32) and 1 or 0) + 2
+		end
+		if dst.kind == "reg8" and src.kind == "reg8" then
+			return 2
+		end
+		if (dst.kind == "reg16" or dst.kind == "reg32") and src.kind == "mem" then
+			local width = operandWidth(dst, default32)
+			return (needsAddressPrefix(src, default32) and 1 or 0)
+				+ (needsOperandPrefix(width, default32) and 1 or 0)
+				+ 1
+				+ memSize(src)
+		end
+		if dst.kind == "reg8" and src.kind == "mem" then
+			return (needsAddressPrefix(src, default32) and 1 or 0) + 1 + memSize(src)
+		end
+		if dst.kind == "mem" and (src.kind == "reg16" or src.kind == "reg32") then
+			local width = operandWidth(src, default32)
+			return (needsAddressPrefix(dst, default32) and 1 or 0)
+				+ (needsOperandPrefix(width, default32) and 1 or 0)
+				+ 1
+				+ memSize(dst)
+		end
+		if dst.kind == "mem" and src.kind == "reg8" then
+			return (needsAddressPrefix(dst, default32) and 1 or 0) + 1 + memSize(dst)
 		end
 	end
 	if name == "ADD" or name == "SUB" then
@@ -558,6 +665,9 @@ local function estimateInstruction(name, operands, default32)
 		end
 		assert(false, "Assembler8086: only register XOR forms are supported")
 	end
+	if name == "BITS" then
+		return 0
+	end
 	error("Assembler8086: cannot estimate instruction " .. tostring(name))
 end
 
@@ -585,7 +695,7 @@ local function parseLine(line)
 	local name = upper(mnemonic)
 	local operandsText = rest ~= "" and splitCsv(rest) or {}
 	local operands = {}
-	if name == "DB" or name == "DW" or name == "DD" or name == "PADTO" or name == "ORG" then
+	if name == "DB" or name == "DW" or name == "DD" or name == "PADTO" or name == "ORG" or name == "BITS" then
 		operands = operandsText
 	else
 		for _, operand in ipairs(operandsText) do
@@ -672,8 +782,19 @@ local function encodeInstruction(inst, bytes, symbols, currentAddress, origin, d
 		end
 		return
 	end
+	if name == "BITS" then
+		return
+	end
 	if name == "NOP" then
 		bytes[#bytes + 1] = 0x90
+		return
+	end
+	if name == "SAHF" then
+		bytes[#bytes + 1] = 0x9E
+		return
+	end
+	if name == "LAHF" then
+		bytes[#bytes + 1] = 0x9F
 		return
 	end
 	if name == "CLI" then
@@ -770,7 +891,7 @@ local function encodeInstruction(inst, bytes, symbols, currentAddress, origin, d
 	end
 	if name == "PUSH" then
 		local op = operands[1]
-		local width = operandWidth(op, default32)
+		local width = op.kind == "imm" and immediateDefaultWidth(op, default32) or operandWidth(op, default32)
 		if needsOperandPrefix(width, default32) then
 			bytes[#bytes + 1] = 0x66
 		end
@@ -1160,6 +1281,7 @@ function Assembler8086.compile(source, opts)
 
 	local origin = opts.origin or 0
 	local defaultOperand32 = opts.defaultOperand32 == true
+	local currentDefault32 = defaultOperand32
 	local address = origin
 	local symbols = {}
 
@@ -1170,23 +1292,32 @@ function Assembler8086.compile(source, opts)
 		if inst.name == "ORG" then
 			origin = evalExpr(inst.rawOperands[1], symbols, address, origin)
 			address = origin
+		elseif inst.name == "BITS" then
+			local bits = tonumber(inst.rawOperands[1])
+			assert(bits == 16 or bits == 32, "Assembler8086: BITS must be 16 or 32")
+			currentDefault32 = bits == 32
 		elseif inst.name == "PADTO" then
 			address = math.max(address, evalExpr(inst.rawOperands[1], symbols, address, origin))
 		elseif inst.name then
-			address = address + estimateInstruction(inst.name, inst.operands, defaultOperand32)
+			address = address + estimateInstruction(inst.name, inst.operands, currentDefault32)
 		end
 	end
 
 	local bytes = {}
 	origin = opts.origin or 0
 	address = origin
+	currentDefault32 = defaultOperand32
 	for _, inst in ipairs(lines) do
 		if inst.name == "ORG" then
 			origin = evalExpr(inst.rawOperands[1], symbols, address, origin)
 			address = origin
+		elseif inst.name == "BITS" then
+			local bits = tonumber(inst.rawOperands[1])
+			assert(bits == 16 or bits == 32, "Assembler8086: BITS must be 16 or 32")
+			currentDefault32 = bits == 32
 		elseif inst.name then
 			local before = #bytes
-			encodeInstruction(inst, bytes, symbols, address, origin, defaultOperand32)
+			encodeInstruction(inst, bytes, symbols, address, origin, currentDefault32)
 			address = address + (#bytes - before)
 		end
 	end

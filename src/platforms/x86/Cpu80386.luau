@@ -18,10 +18,23 @@ local EFLAGS_WRITE_MASK = 0x3F7FD5
 
 local VECTOR_DE = 0
 local VECTOR_UD = 6
+local VECTOR_DF = 8
 local VECTOR_TS = 10
 local VECTOR_NP = 11
 local VECTOR_SS = 12
 local VECTOR_GP = 13
+local VECTOR_PF = 14
+local VECTOR_AC = 17
+
+local EXCEPTIONS_WITH_ERROR_CODE = {
+	[VECTOR_DF] = true,
+	[VECTOR_TS] = true,
+	[VECTOR_NP] = true,
+	[VECTOR_SS] = true,
+	[VECTOR_GP] = true,
+	[VECTOR_PF] = true,
+	[VECTOR_AC] = true,
+}
 
 local REG32 = {
 	"EAX",
@@ -666,6 +679,18 @@ function Cpu80386:_currentPrivilegeLevel()
 	return bit32.band(self.seg.CS or 0, 0x03)
 end
 
+function Cpu80386:_ioPrivilegeLevel()
+	return bit32.band(bit32.rshift(self.flags or 0, 12), 0x03)
+end
+
+function Cpu80386:_setInterruptFlagPrivileged(enabled)
+	if self.protectedMode and self:_currentPrivilegeLevel() > self:_ioPrivilegeLevel() then
+		self:_raiseException(VECTOR_GP, 0, enabled and "STI privilege violation" or "CLI privilege violation")
+	end
+	self:setFlag(FLAG_IF, enabled)
+	self._interruptShadow = enabled and 1 or 0
+end
+
 function Cpu80386:_stackPointer()
 	return self:_stackDefault32() and self:getReg32(4) or self:getReg16(4)
 end
@@ -682,11 +707,15 @@ function Cpu80386:_setStackPointer(value, use32Bit)
 end
 
 function Cpu80386:_makeException(vector, errorCode, message)
+	local normalizedVector = (tonumber(vector) or 0) % 0x100
 	return {
 		__x86Exception = true,
-		vector = (tonumber(vector) or 0) % 0x100,
-		errorCode = errorCode ~= nil and (tonumber(errorCode) or 0) or nil,
+		vector = normalizedVector,
+		errorCode = EXCEPTIONS_WITH_ERROR_CODE[normalizedVector] and (errorCode ~= nil and (tonumber(errorCode) or 0) or 0)
+			or nil,
 		message = tostring(message or ("x86 exception " .. tostring(vector))),
+		faultCS = self._lastStep and self._lastStep.cs or self.seg.CS,
+		faultIP = self._lastStep and self._lastStep.eip or self:_currentIP(),
 	}
 end
 
@@ -1549,7 +1578,13 @@ end
 function Cpu80386:_decodeInterruptGate(vector)
 	local entryOffset = ((tonumber(vector) or 0) % 0x100) * 8
 	if (entryOffset + 7) > (self.idtr.limit or 0) then
-		return nil, "interrupt vector outside idt limit", VECTOR_GP
+		return nil,
+			string.format(
+				"interrupt vector 0x%02X outside idt limit 0x%04X",
+				(tonumber(vector) or 0) % 0x100,
+				(self.idtr.limit or 0) % 0x10000
+			),
+			VECTOR_GP
 	end
 
 	local base = (self.idtr.base or 0) + entryOffset
@@ -1568,6 +1603,7 @@ function Cpu80386:_decodeInterruptGate(vector)
 		dpl = dpl,
 		present = present,
 		type = gateType,
+		typeAttr = typeAttr,
 		kind = (gateType == 0x06 or gateType == 0x0E) and "interrupt_gate"
 			or ((gateType == 0x07 or gateType == 0x0F) and "trap_gate")
 			or (gateType == 0x05 and "task_gate")
@@ -1735,7 +1771,7 @@ function Cpu80386:_returnFar(operandWidth, stackAdjust, isInterruptReturn)
 	end
 end
 
-function Cpu80386:_invokeInterrupt(vector, hardware, errorCode, isFault)
+function Cpu80386:_invokeInterrupt(vector, hardware, errorCode, isFault, faultCS, faultIP)
 	self.halted = false
 	if self.protectedMode then
 		local gate, err, faultVector = self:_decodeInterruptGate(vector)
@@ -1746,7 +1782,16 @@ function Cpu80386:_invokeInterrupt(vector, hardware, errorCode, isFault)
 			self:_raiseException(VECTOR_TS, gate.selector or 0, "task gates are not implemented")
 		end
 		if gate.kind == "unsupported" then
-			self:_raiseException(VECTOR_GP, vector or 0, string.format("unsupported gate type 0x%02X", gate.type or 0))
+			self:_raiseException(
+				VECTOR_GP,
+				vector or 0,
+				string.format(
+					"unsupported gate type 0x%02X for vector 0x%02X (attr=0x%02X)",
+					gate.type or 0,
+					(vector or 0) % 0x100,
+					gate.typeAttr or 0
+				)
+			)
 		end
 		if not gate.present then
 			self:_raiseException(VECTOR_NP, gate.selector or 0, "interrupt gate not present")
@@ -1764,8 +1809,8 @@ function Cpu80386:_invokeInterrupt(vector, hardware, errorCode, isFault)
 		local stackWidth32 = gate.gate32 or (self.segCache.SS and self.segCache.SS.default32) or false
 		local oldSS = self.seg.SS
 		local oldSP = self:_stackPointer()
-		local oldCS = self.seg.CS
-		local oldIP = self:_currentIP()
+		local oldCS = isFault and faultCS or self.seg.CS
+		local oldIP = isFault and faultIP or self:_currentIP()
 		local stackSelector = self.seg.SS
 		local stackDescriptor = self.segCache.SS
 
@@ -1834,6 +1879,8 @@ function Cpu80386:_stepInternal()
 		self.stats.instructions = self.stats.instructions + 1
 		return "INT"
 	end
+
+	self:_advanceInterruptShadow()
 
 	if self.halted then
 		return "HLT"
@@ -1970,7 +2017,7 @@ function Cpu80386:_stepInternal()
 		if bit32.band(self.flags, FLAG_CF) ~= 0 then
 			newFlags = bit32.bor(newFlags, 0x01)
 		end
-		self:_setReg8(7, newFlags)
+		self:setReg8(4, newFlags)
 	elseif opcode == 0xCC then
 		self:_invokeInterrupt(3, false)
 	elseif opcode == 0xCE then
@@ -2069,9 +2116,9 @@ function Cpu80386:_stepInternal()
 	elseif opcode == 0xF9 then
 		self:setFlag(FLAG_CF, true)
 	elseif opcode == 0xFA then
-		self:setFlag(FLAG_IF, false)
+		self:_setInterruptFlagPrivileged(false)
 	elseif opcode == 0xFB then
-		self:setFlag(FLAG_IF, true)
+		self:_setInterruptFlagPrivileged(true)
 	elseif opcode == 0xFC then
 		self:setFlag(FLAG_DF, false)
 	elseif opcode == 0xFD then
@@ -2666,16 +2713,28 @@ function Cpu80386:step()
 	end
 
 	if type(result) == "table" and result.__x86Exception then
+		local originalException = result
 		local delivered, deliveryResult = xpcall(function()
-			return self:_invokeInterrupt(result.vector, false, result.errorCode, true)
+			return self:_invokeInterrupt(
+				originalException.vector,
+				false,
+				originalException.errorCode,
+				true,
+				originalException.faultCS,
+				originalException.faultIP
+			)
 		end, function(err)
 			return err
 		end)
 		if delivered and deliveryResult then
 			self.stats.instructions = self.stats.instructions + 1
-			return string.format("EX_%02X", result.vector)
+			return string.format("EX_%02X", originalException.vector)
 		end
-		result = delivered and result.message or deliveryResult
+		if delivered then
+			result = originalException.message
+		else
+			result = string.format("%s (while delivering %s)", tostring(deliveryResult), tostring(originalException.message))
+		end
 	end
 
 	self._lastError = type(result) == "table" and result.message or tostring(result)

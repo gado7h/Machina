@@ -273,11 +273,11 @@ function BootImageCatalogUtils.buildIdtEntries(maxVector, entries)
 				.. entry.offset
 				.. ", "
 				.. entry.selector
-				.. ", 0x0000, "
+				.. ", "
 				.. entry.typeWord
 				.. ", 0x0000"
 		else
-			lines[#lines + 1] = "  DW 0x0000, 0x0000, 0x0000, 0x0000, 0x0000"
+			lines[#lines + 1] = "  DW 0x0000, 0x0000, 0x0000, 0x0000"
 		end
 	end
 	return lines

@@ -16,6 +16,7 @@ local COMMAND_DISABLE_KEYBOARD = 0x10
 local OUTPUT_BUFFER_LIMIT = 64
 local ASCII_BUFFER_LIMIT = 128
 
+local OUTPUT_PORT_RESET_NOT_ASSERTED = 0x01
 local OUTPUT_PORT_A20_ENABLED = 0x02
 local OUTPUT_PORT_KEYBOARD_ENABLED = 0x10
 
@@ -218,10 +219,11 @@ local function cloneSequence(entry)
 	return { entry }
 end
 
-function I8042Controller.new(config, bus)
+function I8042Controller.new(config, bus, resetCallback)
 	local self = setmetatable({}, I8042Controller)
 	self.config = config
 	self.bus = bus
+	self._resetCallback = resetCallback
 	self._buffer = {}
 	self._ascii = {}
 	self._shift = false
@@ -234,7 +236,8 @@ function I8042Controller.new(config, bus)
 	self._pendingControllerData = nil
 	self._pendingI8042ControllerData = nil
 	self._status = STATUS_SYSTEM
-	self._outputPort = bit32.bor(OUTPUT_PORT_A20_ENABLED, OUTPUT_PORT_KEYBOARD_ENABLED)
+	self._outputPort =
+		bit32.bor(OUTPUT_PORT_RESET_NOT_ASSERTED, OUTPUT_PORT_A20_ENABLED, OUTPUT_PORT_KEYBOARD_ENABLED)
 	self._pendingOutputPortWrite = nil
 	self.stats = { keyPresses = 0, bufferOverruns = 0 }
 
@@ -251,6 +254,12 @@ function I8042Controller.new(config, bus)
 	return self
 end
 
+function I8042Controller:_requestSystemReset()
+	if type(self._resetCallback) == "function" then
+		self._resetCallback()
+	end
+end
+
 function I8042Controller:_setInputFull(enabled)
 	if enabled then
 		self._status = bit32.bor(self._status, STATUS_INPUT_FULL)
@@ -260,10 +269,15 @@ function I8042Controller:_setInputFull(enabled)
 end
 
 function I8042Controller:_setOutputPort(value)
-	self._outputPort = bit32.band(tonumber(value) or 0, 0xFF)
+	local outputPort = bit32.band(tonumber(value) or 0, 0xFF)
+	local resetRequested = bit32.band(outputPort, OUTPUT_PORT_RESET_NOT_ASSERTED) == 0
+	self._outputPort = bit32.bor(outputPort, OUTPUT_PORT_RESET_NOT_ASSERTED)
 	self._scanningEnabled = bit32.band(self._outputPort, OUTPUT_PORT_KEYBOARD_ENABLED) ~= 0
 	if self.bus and self.bus.setA20Enabled then
 		self.bus:setA20Enabled(bit32.band(self._outputPort, OUTPUT_PORT_A20_ENABLED) ~= 0)
+	end
+	if resetRequested then
+		self:_requestSystemReset()
 	end
 end
 
@@ -433,11 +447,6 @@ function I8042Controller:_writeI8042ControllerCommand(value)
 		self._scanningEnabled = true
 		self:_pushOutputByte(KBD_ACK, false)
 		self:_pushOutputByte(KBD_SELF_TEST_PASSED, false)
-	elseif v == 0xD0 then
-		self:_pushOutputByte(self._outputPort, false)
-	elseif v == 0xD1 then
-		self._pendingOutputPortWrite = true
-		self:_setInputFull(true)
 	else
 		self:_pushOutputByte(KBD_ACK, false)
 	end
@@ -474,8 +483,15 @@ function I8042Controller:_writeCtrl(value)
 	elseif v == 0xAA then
 		self._status = bit32.bor(self._status, STATUS_SYSTEM)
 		self:_pushOutputByte(0x55, false)
-	elseif v == 0xAB or v == 0xFE then
+	elseif v == 0xAB then
 		self:_pushOutputByte(0x00, false)
+	elseif v == 0xD0 then
+		self:_pushOutputByte(self._outputPort, false)
+	elseif v == 0xD1 then
+		self._pendingOutputPortWrite = true
+		self:_setInputFull(true)
+	elseif v == 0xFE then
+		self:_requestSystemReset()
 	elseif v == 0xAD then
 		self._scanningEnabled = false
 		self._controllerCommandByte = bit32.bor(self._controllerCommandByte, COMMAND_DISABLE_KEYBOARD)

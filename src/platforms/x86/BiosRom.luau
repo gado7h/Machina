@@ -51,6 +51,8 @@ local function buildSource(config)
 		"  JMP PRINT_STRING",
 		"PRINT_DONE:",
 		"  RET",
+		"SYS_CONFIG_TABLE:",
+		"  DB 0x08, 0xFC, 0x00, 0x00, 0x70, 0x00, 0x00, 0x00",
 		"BIOS_BANNER:",
 		'  DB "Machina x86 BIOS", 13, 10, 0',
 		"BOOT_FAIL_MSG:",
