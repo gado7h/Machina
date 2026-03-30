@@ -2,7 +2,7 @@ local BiosInterrupts = {}
 BiosInterrupts.__index = BiosInterrupts
 
 local MachineProfile = require("@src/platforms/x86/MachineProfile")
-local Task = require("@src/platforms/Task")
+local task = require("@src/task")
 
 local function scanCodeForChar(ch)
 	if ch == "\n" or ch == "\r" then
@@ -849,8 +849,8 @@ function BiosInterrupts:_bootInterrupt(cpu)
 	local reboot = function()
 		self.machine:reboot()
 	end
-	if Task and Task.delay then
-		Task.delay(0, reboot)
+	if task and task.delay then
+		task.delay(0, reboot)
 	else
 		reboot()
 	end

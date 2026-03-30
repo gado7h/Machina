@@ -1,12 +1,37 @@
-local hostTask = nil
+local function normalizeHostTask(value)
+	if type(value) ~= "table" then
+		return nil
+	end
+	if type(value.wait) ~= "function" then
+		return nil
+	end
+	if type(value.delay) ~= "function" then
+		return nil
+	end
+	if type(value.defer) ~= "function" then
+		return nil
+	end
+	if type(value.spawn) ~= "function" then
+		return nil
+	end
 
-local globalTask = rawget(_G, "task")
-if type(globalTask) == "table" then
-	hostTask = globalTask
-else
+	return {
+		wait = value.wait,
+		delay = value.delay,
+		defer = value.defer,
+		spawn = value.spawn,
+		close = value.close or coroutine.close,
+		start = value.start or function()
+			error("task.start is not supported by the host task backend")
+		end,
+	}
+end
+
+local hostTask = normalizeHostTask(task)
+if hostTask == nil then
 	local ok, luneTask = pcall(require, "@lune/task")
-	if ok and type(luneTask) == "table" then
-		hostTask = luneTask
+	if ok then
+		hostTask = normalizeHostTask(luneTask)
 	end
 end
 

@@ -1,4 +1,4 @@
-local scheduler = require("@src/platforms/Task")
+local task = require("@src/task")
 
 local Runner = {}
 
@@ -156,7 +156,7 @@ function Runner.waitForBoot(machine, options)
 				}
 		end
 
-		scheduler.wait(pollInterval)
+		task.wait(pollInterval)
 	end
 
 	return false, string.format("timed out after %.2fs waiting for RUNNING", timeoutSeconds), {
