@@ -254,7 +254,9 @@ local function testApp(machine, config, app)
 	end
 
 	-- Launch the app by typing its name + Enter.
-	Keyboard.type(machine, app.launchKeys, 32)
+	-- Inject all characters at once so the I8042 ASCII buffer is fully populated,
+	-- then let the shell's INT 0x16 AH=00 spin loop consume them naturally.
+	Keyboard.typeAll(machine, app.launchKeys)
 
 	-- Warmup: let the app initialize and render its first frame.
 	local warmupTicks = app.mode == "graphics" and 10 or 6
@@ -330,11 +332,14 @@ local function testApp(machine, config, app)
 				frozenStreak = frozenStreak + 1
 				if frozenStreak > frozenThreshold then
 					DiagnosticsState.restoreMachine(machine, snapshot)
-					return fail("screen frozen for " .. frozenStreak .. " consecutive frames (scheduler or app stuck)", {
-						frame = frameNum,
-						frozenStreak = frozenStreak,
-						mode = frame.mode,
-					})
+					return fail(
+						"screen frozen for " .. frozenStreak .. " consecutive frames (scheduler or app stuck)",
+						{
+							frame = frameNum,
+							frozenStreak = frozenStreak,
+							mode = frame.mode,
+						}
+					)
 				end
 			else
 				frozenStreak = 0
@@ -348,12 +353,17 @@ local function testApp(machine, config, app)
 	local overallDiff = FrameCapture.diff(frames[1], frames[#frames])
 	if overallDiff.percentChanged < 0.5 then
 		DiagnosticsState.restoreMachine(machine, snapshot)
-		return fail("no significant motion (" .. string.format("%.1f", overallDiff.percentChanged) .. "% changed) (app may not respond to input)", {
-			firstMode = frames[1].mode,
-			lastMode = frames[#frames].mode,
-			percentChanged = overallDiff.percentChanged,
-			frames = app.frames,
-		})
+		return fail(
+			"no significant motion ("
+				.. string.format("%.1f", overallDiff.percentChanged)
+				.. "% changed) (app may not respond to input)",
+			{
+				firstMode = frames[1].mode,
+				lastMode = frames[#frames].mode,
+				percentChanged = overallDiff.percentChanged,
+				frames = app.frames,
+			}
+		)
 	end
 
 	-- Check 5: Frame timing — no extreme outliers (scheduler health).

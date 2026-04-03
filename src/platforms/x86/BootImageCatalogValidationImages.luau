@@ -793,10 +793,8 @@ local function expectedAtaGeometry(config)
 	local sectorsPerTrack = tonumber(x86.SECTORS_PER_TRACK) or 18
 	local cylinders = math.max(1, math.floor(totalSectors / math.max(1, heads * sectorsPerTrack)))
 	local ch = cylinders % 0x100
-	local cl = bit32.bor(
-		bit32.band(sectorsPerTrack, 0x3F),
-		bit32.lshift(bit32.band(bit32.rshift(cylinders, 8), 0x03), 6)
-	)
+	local cl =
+		bit32.bor(bit32.band(sectorsPerTrack, 0x3F), bit32.lshift(bit32.band(bit32.rshift(cylinders, 8), 0x03), 6))
 	local dh = math.max(0, heads - 1) % 0x100
 	return ch, cl, dh
 end

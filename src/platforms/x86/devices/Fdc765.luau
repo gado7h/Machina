@@ -82,14 +82,30 @@ end
 
 function Fdc765:attachBus(bus)
 	self._bus = bus
-	bus:registerPort(BASE_PORT + 0, nil, function(v) self:_writeDor(v) end, "FDC DOR")
-	bus:registerPort(BASE_PORT + 1, nil, function(v) self:_writeTap(v) end, "FDC Tape")
-	bus:registerPort(BASE_PORT + 2, nil, function(v) self:_writeDor(v) end, "FDC DOR (alt)")
+	bus:registerPort(BASE_PORT + 0, nil, function(v)
+		self:_writeDor(v)
+	end, "FDC DOR")
+	bus:registerPort(BASE_PORT + 1, nil, function(v)
+		self:_writeTap(v)
+	end, "FDC Tape")
+	bus:registerPort(BASE_PORT + 2, nil, function(v)
+		self:_writeDor(v)
+	end, "FDC DOR (alt)")
 	bus:registerPort(BASE_PORT + 3, nil, nil, "FDC (unused)")
-	bus:registerPort(BASE_PORT + 4, function() return self:_readStatus() end, nil, "FDC MSR")
-	bus:registerPort(BASE_PORT + 5, function() return self:_readData() end, function(v) self:_writeData(v) end, "FDC Data")
-	bus:registerPort(BASE_PORT + 6, nil, function(v) self:_writeDor(v) end, "FDC DOR (alt)")
-	bus:registerPort(BASE_PORT + 7, nil, function(v) self:_writeConfig(v) end, "FDC Config")
+	bus:registerPort(BASE_PORT + 4, function()
+		return self:_readStatus()
+	end, nil, "FDC MSR")
+	bus:registerPort(BASE_PORT + 5, function()
+		return self:_readData()
+	end, function(v)
+		self:_writeData(v)
+	end, "FDC Data")
+	bus:registerPort(BASE_PORT + 6, nil, function(v)
+		self:_writeDor(v)
+	end, "FDC DOR (alt)")
+	bus:registerPort(BASE_PORT + 7, nil, function(v)
+		self:_writeConfig(v)
+	end, "FDC Config")
 end
 
 function Fdc765:_readStatus()
@@ -145,8 +161,7 @@ function Fdc765:_writeDor(value)
 	self._currentDrive = bit32.band(value, 0x03)
 end
 
-function Fdc765:_writeTap(_value)
-end
+function Fdc765:_writeTap(_value) end
 
 function Fdc765:_writeConfig(value)
 	self._configReg = bit32.band(tonumber(value) or 0, 0xFF)
@@ -388,7 +403,8 @@ function Fdc765:_executeFormatTrack()
 	self._st2 = 0
 
 	self._msr = bit32.bor(MSR_READY, MSR_DIRECTION, MSR_BUSY)
-	self._resultBuffer = { self._st0, self._st1, self._st2, self._headPosition[drive + 1], head, sectorsPerTrack, sizeCode }
+	self._resultBuffer =
+		{ self._st0, self._st1, self._st2, self._headPosition[drive + 1], head, sectorsPerTrack, sizeCode }
 	self._commandBuffer = {}
 	self:_raiseIRQ()
 end

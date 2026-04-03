@@ -13,7 +13,7 @@ local SCAN_TO_KEY = {
 -- Each character is sent as keyDown + keyUp, then CPU is stepped
 -- to let the IRQ deliver the scan code to the guest.
 function Keyboard.type(machine, text, delaySteps)
-	delaySteps = delaySteps or 16
+	delaySteps = delaySteps or 64
 	local kbd = machine.keyboard
 	if not kbd then
 		return
@@ -38,6 +38,29 @@ function Keyboard.type(machine, text, delaySteps)
 					cpu:step()
 				end)
 			end
+		end
+	end
+end
+
+-- Inject all characters at once without stepping, then step the CPU
+-- to let the guest process the queued input. This avoids the INT 0x16
+-- AH=00 spin loop starving the guest of CPU budget.
+function Keyboard.typeAll(machine, text)
+	local kbd = machine.keyboard
+	if not kbd then
+		return
+	end
+
+	for i = 1, #text do
+		local ch = text:sub(i, i)
+		local key = SCAN_TO_KEY[ch]
+		if key then
+			kbd:keyDown(key)
+			kbd:keyUp(key)
+		elseif ch:match("%a") then
+			local keyName = string.upper(ch)
+			kbd:keyDown(keyName)
+			kbd:keyUp(keyName)
 		end
 	end
 end

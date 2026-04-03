@@ -120,14 +120,13 @@ function BootController:applyConfigOverride(override)
 		self:_setX86Field(k, v)
 	end
 
-	if (override.FLOPPY_TRACKS or override.FLOPPY_HEADS or override.FLOPPY_SECTORS) and override.FLOPPY_A_TYPE == nil then
+	if
+		(override.FLOPPY_TRACKS or override.FLOPPY_HEADS or override.FLOPPY_SECTORS)
+		and override.FLOPPY_A_TYPE == nil
+	then
 		self:_setX86Field(
 			"FLOPPY_A_TYPE",
-			MachineProfile.floppyTypeForGeometry(
-				self.x86.FLOPPY_TRACKS,
-				self.x86.FLOPPY_HEADS,
-				self.x86.FLOPPY_SECTORS
-			)
+			MachineProfile.floppyTypeForGeometry(self.x86.FLOPPY_TRACKS, self.x86.FLOPPY_HEADS, self.x86.FLOPPY_SECTORS)
 		)
 	end
 
@@ -301,7 +300,7 @@ function BootController:_leftBootSector(pc)
 	local romSize = tonumber(self.x86.ROM_SIZE) or 0x10000
 	local inRom = linearPc >= romBase and linearPc < (romBase + romSize)
 	local inBootSector = linearPc >= self._bootLinear and linearPc < (self._bootLinear + 512)
-	return (not inRom) and (not inBootSector)
+	return (not inRom) and not inBootSector
 end
 
 function BootController:tick(_dt)
@@ -389,7 +388,11 @@ function BootController:_initializeBDA()
 	cpu:writePhysical8(0x0440, 0x00)
 	cpu:writePhysical8(0x0441, 0x00)
 	cpu:writePhysical8(0x0447, 0x03)
-	writeDword(cpu, 0x046C, self.machine.rtc and self.machine.rtc.getBIOSClockTicks and self.machine.rtc:getBIOSClockTicks() or 0)
+	writeDword(
+		cpu,
+		0x046C,
+		self.machine.rtc and self.machine.rtc.getBIOSClockTicks and self.machine.rtc:getBIOSClockTicks() or 0
+	)
 	cpu:writePhysical8(0x0470, 0x00)
 	writeWord(cpu, 0x044A, cols)
 	writeWord(cpu, 0x044C, 0x1000)

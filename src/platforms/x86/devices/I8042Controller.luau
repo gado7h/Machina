@@ -236,8 +236,7 @@ function I8042Controller.new(config, bus, resetCallback)
 	self._pendingControllerData = nil
 	self._pendingI8042ControllerData = nil
 	self._status = STATUS_SYSTEM
-	self._outputPort =
-		bit32.bor(OUTPUT_PORT_RESET_NOT_ASSERTED, OUTPUT_PORT_A20_ENABLED, OUTPUT_PORT_KEYBOARD_ENABLED)
+	self._outputPort = bit32.bor(OUTPUT_PORT_RESET_NOT_ASSERTED, OUTPUT_PORT_A20_ENABLED, OUTPUT_PORT_KEYBOARD_ENABLED)
 	self._pendingOutputPortWrite = nil
 	self.stats = { keyPresses = 0, bufferOverruns = 0 }
 
@@ -402,6 +401,9 @@ end
 function I8042Controller:_readData()
 	local value = table.remove(self._buffer, 1) or 0
 	self:_clearOutputStatus()
+	if #self._buffer > 0 then
+		self:_raiseIRQ()
+	end
 	return value
 end
 

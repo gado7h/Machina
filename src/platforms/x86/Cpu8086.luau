@@ -980,8 +980,13 @@ function Cpu8086:step()
 	local startIP = self.ip
 	local startCS = self.seg.CS
 	local repeatPrefix = nil
+	local prefixCount = 0
 	local opcode = self:fetch8()
 	while opcode == 0xF2 or opcode == 0xF3 or SEGMENT_PREFIX_TO_CODE[opcode] ~= nil do
+		prefixCount += 1
+		if prefixCount > 15 then
+			error("too many instruction prefix bytes")
+		end
 		if opcode == 0xF2 or opcode == 0xF3 then
 			repeatPrefix = opcode
 		else
@@ -1400,7 +1405,7 @@ function Cpu8086:step()
 		self.flags = bit32.bor(bit32.band(self:pop16(), FLAGS16_WRITE_MASK), 0x0002)
 	elseif opcode == 0x9E then
 		local ah = self:getReg8(4)
-		local newFlags = bit32.bor(bit32.band(self.flags, 0xFFFFFF00), ah)
+		local newFlags = bit32.bor(bit32.band(self.flags, 0xFF00), ah)
 		if bit32.band(ah, 0x80) ~= 0 then
 			newFlags = bit32.bor(newFlags, FLAG_SF)
 		else
@@ -1444,7 +1449,7 @@ function Cpu8086:step()
 		if bit32.band(self.flags, FLAG_CF) ~= 0 then
 			newFlags = bit32.bor(newFlags, 0x01)
 		end
-		self:setReg8(7, newFlags)
+		self:setReg8(4, newFlags)
 	elseif opcode == 0xCC then
 		self:_invokeInterrupt(3, false)
 	elseif opcode == 0xCE then

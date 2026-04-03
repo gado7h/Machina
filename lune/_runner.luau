@@ -110,26 +110,32 @@ function Runner.waitForBoot(machine, options)
 		local bootRecord = machine:getBootRecord()
 
 		if bootRecord and bootRecord.imageName ~= nil and bootRecord.imageName ~= "bootOS" then
-			return false, string.format("expected bootOS image, got %s", tostring(bootRecord.imageName)), {
-				bootStage = bootStage,
-				bootRecord = bootRecord,
-			}
+			return false,
+				string.format("expected bootOS image, got %s", tostring(bootRecord.imageName)),
+				{
+					bootStage = bootStage,
+					bootRecord = bootRecord,
+				}
 		end
 
 		if bootStage == "FAULT" then
-			return false, "machine entered FAULT before boot completed", {
-				bootStage = bootStage,
-				bootRecord = bootRecord,
-			}
+			return false,
+				"machine entered FAULT before boot completed",
+				{
+					bootStage = bootStage,
+					bootRecord = bootRecord,
+				}
 		end
 
 		if bootStage == "RUNNING" then
 			local diagnostics = bootRecord and bootRecord.diagnostics or nil
 			if diagnostics == nil then
-				return false, "boot completed without boot diagnostics in the boot record", {
-					bootStage = bootStage,
-					bootRecord = bootRecord,
-				}
+				return false,
+					"boot completed without boot diagnostics in the boot record",
+					{
+						bootStage = bootStage,
+						bootRecord = bootRecord,
+					}
 			end
 			if diagnostics.passed ~= true then
 				return false,
@@ -159,10 +165,12 @@ function Runner.waitForBoot(machine, options)
 		task.wait(pollInterval)
 	end
 
-	return false, string.format("timed out after %.2fs waiting for RUNNING", timeoutSeconds), {
-		bootStage = machine:getBootStage(),
-		bootRecord = machine:getBootRecord(),
-	}
+	return false,
+		string.format("timed out after %.2fs waiting for RUNNING", timeoutSeconds),
+		{
+			bootStage = machine:getBootStage(),
+			bootRecord = machine:getBootRecord(),
+		}
 end
 
 function Runner.printSuiteSummary(label, suite)
