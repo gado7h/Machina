@@ -1010,6 +1010,13 @@ function Cpu8086:step()
 		local other = self:getReg16(reg)
 		self:setReg16(0, other)
 		self:setReg16(reg, ax)
+	elseif opcode == 0x98 then
+		local al = self:getReg8(0)
+		local signed = al >= 0x80 and al - 0x100 or al
+		self:setReg16(0, signed)
+	elseif opcode == 0x99 then
+		local ax = self:getReg16(0)
+		self:setReg16(2, ax >= 0x8000 and 0xFFFF or 0x0000)
 	elseif opcode == 0xF8 then
 		self:setFlag(FLAG_CF, false)
 	elseif opcode == 0xF9 then

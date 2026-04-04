@@ -1980,6 +1980,24 @@ function Cpu80386:_stepInternal()
 			self:setReg16(0, other)
 			self:setReg16(reg, ax)
 		end
+	elseif opcode == 0x98 then
+		if operandWidth == 32 then
+			local ax = self:getReg16(0)
+			local signed = ax >= 0x8000 and ax - 0x10000 or ax
+			self:setReg32(0, signed)
+		else
+			local al = self:getReg8(0)
+			local signed = al >= 0x80 and al - 0x100 or al
+			self:setReg16(0, signed)
+		end
+	elseif opcode == 0x99 then
+		if operandWidth == 32 then
+			local eax = self:getReg32(0)
+			self:setReg32(3, eax >= 0x80000000 and 0xFFFFFFFF or 0x00000000)
+		else
+			local ax = self:getReg16(0)
+			self:setReg16(2, ax >= 0x8000 and 0xFFFF or 0x0000)
+		end
 	elseif opcode == 0x9E then
 		local ah = self:getReg8(4)
 		local newFlags = bit32.bor(bit32.band(self.flags, 0xFFFFFF00), ah)
@@ -2804,6 +2822,10 @@ function Cpu80386:step()
 	end
 
 	self._lastError = type(result) == "table" and result.message or tostring(result)
+	if type(result) == "table" and result.__x86Exception then
+		self:reset()
+		return "TRIPLE_FAULT"
+	end
 	self.halted = true
 	error(self._lastError)
 end
