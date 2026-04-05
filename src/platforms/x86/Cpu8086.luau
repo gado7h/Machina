@@ -1017,6 +1017,11 @@ function Cpu8086:step()
 	elseif opcode == 0x99 then
 		local ax = self:getReg16(0)
 		self:setReg16(2, ax >= 0x8000 and 0xFFFF or 0x0000)
+	elseif opcode == 0xD7 then
+		local al = self:getReg8(0)
+		local bx = self:getReg16(3)
+		local linearAddr = self:linearAddress(self.seg.DS, bx + al)
+		self:setReg8(0, self.bus:memRead(linearAddr))
 	elseif opcode == 0xF8 then
 		self:setFlag(FLAG_CF, false)
 	elseif opcode == 0xF9 then

@@ -1998,6 +1998,11 @@ function Cpu80386:_stepInternal()
 			local ax = self:getReg16(0)
 			self:setReg16(2, ax >= 0x8000 and 0xFFFF or 0x0000)
 		end
+	elseif opcode == 0xD7 then
+		local al = self:getReg8(0)
+		local bx = self:_codeDefault32() and self:getReg32(3) or self:getReg16(3)
+		local linearAddr = self:linearAddress(self.seg.DS, bx + al)
+		self:setReg8(0, self.bus:memRead(linearAddr))
 	elseif opcode == 0x9E then
 		local ah = self:getReg8(4)
 		local newFlags = bit32.bor(bit32.band(self.flags, 0xFFFFFF00), ah)

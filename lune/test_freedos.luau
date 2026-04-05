@@ -9,7 +9,6 @@ local function runFreeDOSBootTest()
 		local machine = Runner.createBootMachine({
 			X86 = {
 				IMAGE = {
-					SOURCE = "provider",
 					PROVIDER = "freeDOS",
 				},
 			},
@@ -79,7 +78,6 @@ local function runFreeDOSBootTest()
 		local machine = Runner.createBootMachine({
 			X86 = {
 				IMAGE = {
-					SOURCE = "provider",
 					PROVIDER = "freeDOS",
 				},
 			},
@@ -145,7 +143,6 @@ local function runFreeDOSBootTest()
 		local machine = Runner.createBootMachine({
 			X86 = {
 				IMAGE = {
-					SOURCE = "provider",
 					PROVIDER = "freeDOS",
 				},
 			},
