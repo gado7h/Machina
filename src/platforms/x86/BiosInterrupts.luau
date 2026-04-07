@@ -523,6 +523,20 @@ function BiosInterrupts:_floppyDiskInterrupt(cpu, drive)
 		return self:_floppyGetDriveParameters(cpu, drive)
 	end
 
+	if service == 0x41 then
+		local bx = cpu:getReg16(REG16.BX)
+		if bx == 0x55AA then
+			self:_setCarry(cpu, false)
+			cpu:setReg8(REG8.AH, 0x30)
+			cpu:setReg16(REG16.BX, 0xAA55)
+			cpu:setReg8(REG8.CL, 0x01)
+			return true
+		end
+		self:_setCarry(cpu, true)
+		self:_setDiskStatus(cpu, 0x01)
+		return true
+	end
+
 	self:_setCarry(cpu, true)
 	self:_setDiskStatus(cpu, 0x01)
 	return true
