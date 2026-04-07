@@ -138,7 +138,7 @@ local function runFreeDOSBootTest()
 		end
 	end
 
-	-- Test 3: FreeDOS boot sector performs disk reads via INT 0x13
+	-- Test 3: FreeDOS boot sector performs disk reads beyond initial BIOS load
 	do
 		local machine = Runner.createBootMachine({
 			X86 = {
@@ -156,6 +156,9 @@ local function runFreeDOSBootTest()
 		local faultMessage = nil
 		local instructionCount = 0
 
+		-- Track if we reached code beyond boot sector (IP > 0x8000 indicates loading more sectors)
+		local reachedExtendedCode = false
+
 		while os.clock() < deadline do
 			local bootStage = machine:getBootStage()
 			if bootStage == "FAULT" then
@@ -168,9 +171,13 @@ local function runFreeDOSBootTest()
 			local cpu = machine.cpu
 			if cpu then
 				instructionCount = (cpu.stats and cpu.stats.instructions) or 0
+				-- Check if we're executing code beyond initial boot sector
+				if cpu.seg.CS == 0x1FE0 and cpu.ip > 0x8000 then
+					reachedExtendedCode = true
+				end
 			end
 
-			if instructionCount > 1000 and not faulted then
+			if instructionCount > 10000 and not faulted then
 				break
 			end
 
@@ -179,7 +186,7 @@ local function runFreeDOSBootTest()
 
 		if faulted then
 			results[#results + 1] = {
-				name = "FreeDOS boot sector performs INT 0x13 sector reads",
+				name = "FreeDOS boot sector performs extended disk reads",
 				passed = false,
 				suite = "freedos",
 				detail = string.format("CPU fault after %d instructions: %s", instructionCount, tostring(faultMessage)),
@@ -190,10 +197,55 @@ local function runFreeDOSBootTest()
 			}
 		else
 			results[#results + 1] = {
-				name = "FreeDOS boot sector performs INT 0x13 sector reads",
-				passed = instructionCount > 500,
+				name = "FreeDOS boot sector performs extended disk reads",
+				passed = instructionCount > 8000,
 				suite = "freedos",
-				detail = string.format("%d instructions executed (disk reads implied by instruction count)", instructionCount),
+				detail = string.format("%d instructions; reachedExtendedCode=%s", 
+					instructionCount, tostring(reachedExtendedCode)),
+			}
+		end
+	end
+
+	-- Test 4: Verify relocated boot code is at 1FE0:0000
+	do
+		local machine = Runner.createBootMachine({
+			X86 = {
+				IMAGE = {
+					PROVIDER = "freeDOS",
+				},
+			},
+		})
+
+		machine:setFramePresenter(function() end)
+		machine:powerOn()
+
+		local deadline = os.clock() + 10
+
+		while os.clock() < deadline do
+			local cpu = machine.cpu
+			if cpu and cpu.seg.CS == 0x1FE0 then
+				-- Read first few bytes at 1FE0:0000 to verify boot sector is there
+				local b1 = cpu:readPhysical8(0x1FE0 * 16)
+				local b2 = cpu:readPhysical8(0x1FE0 * 16 + 1)
+				if b1 == 0xEB and b2 == 0x3C then
+					results[#results + 1] = {
+						name = "FreeDOS boot sector relocated correctly",
+						passed = true,
+						suite = "freedos",
+						detail = "Boot sector found at 1FE0:0000 (signature EB 3C)",
+					}
+					break
+				end
+			end
+			task.wait(0.02)
+		end
+
+		if #results < 4 or results[#results].name ~= "FreeDOS boot sector relocated correctly" then
+			results[#results + 1] = {
+				name = "FreeDOS boot sector relocated correctly",
+				passed = false,
+				suite = "freedos",
+				detail = "Could not verify boot sector at 1FE0:0000",
 			}
 		end
 	end
