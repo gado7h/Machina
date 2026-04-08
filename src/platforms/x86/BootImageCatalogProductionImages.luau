@@ -1,4 +1,3 @@
-local BootOSHex = require("@src/platforms/x86/BootOSHex")
 local FreeDOSBootHex = require("@src/platforms/x86/FreeDOSBootHex")
 local BiosRom = require("@src/platforms/x86/BiosRom")
 local MachineProfile = require("@src/platforms/x86/MachineProfile")
@@ -62,73 +61,6 @@ local function bytesToSectors(bytes, sectorSize)
 
 	return sectors, totalSectors
 end
-
-local function buildBootOS(config)
-	local hexStr = BootOSHex
-	local bytes = rawHexToBytes(hexStr)
-
-	local byteCount = #bytes
-	local tracks, heads, sectorsPerTrack = detectFloppyGeometry(byteCount)
-	local sectors, totalSectors = bytesToSectors(bytes)
-
-	local bootOSConfig = {}
-	for k, v in pairs(config) do
-		bootOSConfig[k] = v
-	end
-	bootOSConfig.X86 = bootOSConfig.X86 or {}
-	for k, v in pairs(config.X86 or {}) do
-		bootOSConfig.X86[k] = v
-	end
-	bootOSConfig.X86.KERNEL_LOAD_SEG = 0x0780
-
-	local biosArtifact = BiosRom.buildArtifact(bootOSConfig)
-
-	local configOverride = {
-		KERNEL_LOAD_SEG = 0x0780,
-		FLOPPY_A_PRESENT = true,
-		FLOPPY_A_TYPE = MachineProfile.floppyTypeForGeometry(tracks, heads, sectorsPerTrack),
-		FLOPPY_TRACKS = tracks,
-		FLOPPY_HEADS = heads,
-		FLOPPY_SECTORS = sectorsPerTrack,
-		HEADS = heads,
-		SECTORS_PER_TRACK = sectorsPerTrack,
-		DIAGNOSTICS = {
-			PRINT_SUMMARY = false,
-		},
-	}
-
-	return {
-		name = "bootOS",
-		romBytes = BiosRom.buildROMBytes(bootOSConfig, biosArtifact),
-		sectors = sectors,
-		layout = {
-			kernelSectorStart = 1,
-			kernelSectorCount = math.max(0, totalSectors - 1),
-			kernelLoadSeg = 0x0780,
-			fsSuperSector = 0,
-			rootDirSector = 0,
-			rootDirSectorCount = 0,
-			dataStartSector = 0,
-			fileCount = 0,
-			totalSectors = totalSectors,
-		},
-		configOverride = configOverride,
-		files = {},
-		symbols = {
-			bios = biosArtifact.symbols,
-		},
-		meta = {
-			source = "embedded",
-			provider = "bootOS",
-			name = "bootOS",
-		},
-	}
-end
-
-ProductionImages.bootOS = {
-	name = "bootOS",
-	build = buildBootOS,
-}
 
 local function buildFreeDOS(config)
 	local hexStr = FreeDOSBootHex

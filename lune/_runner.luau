@@ -109,15 +109,6 @@ function Runner.waitForBoot(machine, options)
 		local bootStage = machine:getBootStage()
 		local bootRecord = machine:getBootRecord()
 
-		if bootRecord and bootRecord.imageName ~= nil and bootRecord.imageName ~= "bootOS" then
-			return false,
-				string.format("expected bootOS image, got %s", tostring(bootRecord.imageName)),
-				{
-					bootStage = bootStage,
-					bootRecord = bootRecord,
-				}
-		end
-
 		if bootStage == "FAULT" then
 			return false,
 				"machine entered FAULT before boot completed",
@@ -152,7 +143,7 @@ function Runner.waitForBoot(machine, options)
 
 			return true,
 				string.format(
-					"bootOS reached RUNNING with diagnostics %d/%d",
+					"FreeDOS reached RUNNING with diagnostics %d/%d",
 					diagnostics.passedCount,
 					diagnostics.totalCount
 				),

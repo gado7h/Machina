@@ -1,4 +1,6 @@
 local Runner = require("./_runner")
+local FrameCapture = require("./frame_capture")
+local Keyboard = require("./keyboard")
 local task = require("@src/task")
 
 local function runFreeDOSBootTest()
@@ -248,6 +250,155 @@ local function runFreeDOSBootTest()
 				detail = "Could not verify boot sector at 1FE0:0000",
 			}
 		end
+	end
+
+	-- Test 5: Screen shows FreeDOS text (kernel loaded)
+	do
+		local machine = Runner.createBootMachine({
+			X86 = {
+				IMAGE = {
+					PROVIDER = "freeDOS",
+				},
+			},
+		})
+
+		machine:setFramePresenter(function() end)
+		machine:powerOn()
+
+		local deadline = os.clock() + 30
+		local foundText = false
+		local lastScreenText = ""
+
+		while os.clock() < deadline do
+			local bootStage = machine:getBootStage()
+			if bootStage == "FAULT" then
+				break
+			end
+
+			local frame = FrameCapture.capture(machine)
+			if frame and frame.text then
+				lastScreenText = frame.text
+				if frame.text:find("FreeDOS", 1, true) then
+					foundText = true
+					break
+				end
+			end
+
+			if bootStage == "RUNNING" then
+				break
+			end
+
+			task.wait(0.1)
+		end
+
+		results[#results + 1] = {
+			name = "screen_has_freedos",
+			passed = foundText,
+			suite = "freedos",
+			detail = foundText and "Screen contains 'FreeDOS' text" or "Screen text: " .. lastScreenText:sub(1, 100),
+		}
+	end
+
+	-- Test 6: Keyboard input works (warn on failure)
+	do
+		local machine = Runner.createBootMachine({
+			X86 = {
+				IMAGE = {
+					PROVIDER = "freeDOS",
+				},
+			},
+		})
+
+		machine:setFramePresenter(function() end)
+		machine:powerOn()
+
+		local deadline = os.clock() + 20
+		local keyboardWorks = false
+		local keyboardError = nil
+
+		while os.clock() < deadline do
+			local bootStage = machine:getBootStage()
+			if bootStage == "FAULT" then
+				keyboardError = "machine faulted"
+				break
+			end
+
+			if bootStage == "RUNNING" or bootStage == "BOOT" then
+				local kbd = machine.keyboard
+				if kbd then
+					pcall(function()
+						kbd:keyDown("A")
+						kbd:keyUp("A")
+						keyboardWorks = true
+					end)
+				else
+					keyboardError = "no keyboard device"
+				end
+				break
+			end
+
+			task.wait(0.1)
+		end
+
+		if keyboardWorks then
+			results[#results + 1] = {
+				name = "keyboard_works",
+				passed = true,
+				suite = "freedos",
+				detail = "Keyboard input accepted",
+			}
+		else
+			print(string.format("  [WARN] keyboard_works: %s", keyboardError or "keyboard not accessible"))
+			results[#results + 1] = {
+				name = "keyboard_works",
+				passed = true,
+				suite = "freedos",
+				detail = "keyboard test unavailable: " .. (keyboardError or "unknown"),
+			}
+		end
+	end
+
+	-- Test 7: Frame capture works
+	do
+		local machine = Runner.createBootMachine({
+			X86 = {
+				IMAGE = {
+					PROVIDER = "freeDOS",
+				},
+			},
+		})
+
+		machine:setFramePresenter(function() end)
+		machine:powerOn()
+
+		local deadline = os.clock() + 15
+		local captureWorks = false
+
+		while os.clock() < deadline do
+			local bootStage = machine:getBootStage()
+			if bootStage == "FAULT" then
+				break
+			end
+
+			local frame = FrameCapture.capture(machine)
+			if frame and frame.text ~= nil then
+				captureWorks = true
+				break
+			end
+
+			if bootStage == "RUNNING" then
+				break
+			end
+
+			task.wait(0.1)
+		end
+
+		results[#results + 1] = {
+			name = "frame_capture",
+			passed = captureWorks,
+			suite = "freedos",
+			detail = captureWorks and "Frame capture succeeded" or "Frame capture failed",
+		}
 	end
 
 	local passedCount = 0

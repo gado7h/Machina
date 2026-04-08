@@ -173,8 +173,8 @@ Config.X86 = {
 	PIC_VECTOR_BASE_SLAVE = BIOS_PIC_VECTORS.slave,
 
 	IMAGE = {
-		SOURCE = "provider",
-		PROVIDER = "bootOS",
+		SOURCE = nil,
+		PROVIDER = "freeDOS",
 	},
 
 	DIAGNOSTICS = {

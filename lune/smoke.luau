@@ -1,4 +1,4 @@
---> Fast smoke gate that boots bootOS and checks the boot-time diagnostics.
+--> Fast smoke gate that boots FreeDOS and checks the boot-time diagnostics.
 
 local Runner = require("./_runner")
 

@@ -50,7 +50,7 @@ jobs:
         run: stylua --check src lune
 
       - name: Generate package bundles
-        run: pwsh -File tools/build-targets.ps1 -Target all -Version "${{ env.MACHINA_VERSION }}" -GitRef "${{ github.sha }}"
+        run: python3 tools/build-targets.py --target all --version "${{ env.MACHINA_VERSION }}" --git-ref "${{ github.sha }}"
 
       - name: Archive package bundles
         run: |
@@ -59,7 +59,7 @@ jobs:
           tar -czf "$MACHINA_ARTIFACT_DIR/machina-roblox-${MACHINA_VERSION}.tar.gz" -C dist machina-roblox
 
       - name: Write artifact metadata
-        run: pwsh -File tools/write-release-metadata.ps1 -Version "${{ env.MACHINA_VERSION }}" -GitRef "${{ github.sha }}" -LuauArchive "${{ env.MACHINA_ARTIFACT_DIR }}/machina-luau-${{ env.MACHINA_VERSION }}.tar.gz" -RobloxArchive "${{ env.MACHINA_ARTIFACT_DIR }}/machina-roblox-${{ env.MACHINA_VERSION }}.tar.gz" -OutputDirectory "${{ env.MACHINA_ARTIFACT_DIR }}"
+        run: python3 tools/write-release-metadata.py --version "${{ env.MACHINA_VERSION }}" --git-ref "${{ github.sha }}" --luau-archive "${{ env.MACHINA_ARTIFACT_DIR }}/machina-luau-${{ env.MACHINA_VERSION }}.tar.gz" --roblox-archive "${{ env.MACHINA_ARTIFACT_DIR }}/machina-roblox-${{ env.MACHINA_VERSION }}.tar.gz" --output-directory "${{ env.MACHINA_ARTIFACT_DIR }}"
 
       - name: Upload package artifact
         uses: actions/upload-artifact@v4

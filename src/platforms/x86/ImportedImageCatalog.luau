@@ -58,9 +58,6 @@ local function buildImportedImage(entryName)
 	return snapshotImage(image)
 end
 
-ImportedImageCatalog.ProtectedModeBringUp = buildImportedImage("bootOS")
-ImportedImageCatalog.bootOS = buildImportedImage("bootOS")
-
 function ImportedImageCatalog.get(name)
 	return ImportedImageCatalog[name]
 end

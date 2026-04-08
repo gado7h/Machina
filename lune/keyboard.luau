@@ -1,4 +1,4 @@
--- Keyboard injection helpers for bootOS app testing.
+-- Keyboard injection helpers for FreeDOS testing.
 -- Wraps I8042Controller:keyDown/keyUp with CPU stepping to deliver IRQs.
 
 local Keyboard = {}

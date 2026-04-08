@@ -8,7 +8,7 @@ This document defines the guest-visible validation path for Machina's x86 target
 
 Use the project-local Lune scripts for day-to-day validation:
 
-- `lune run smoke` boots the default `bootOS` image, waits for `RUNNING`, and requires the boot record diagnostics to pass.
+- `lune run smoke` boots the default `FreeDOS` image, waits for `RUNNING`, and requires the boot record diagnostics to pass.
 - `lune run review` runs `HardwareDiagnostics.runReviewSuite()` and prints the final `passedCount/totalCount` summary.
 
 The goal is to keep the review story separate from the boot-time smoke story:
