@@ -169,6 +169,8 @@ end
 
 function BiosInterrupts:_teletype(cpu)
 	local ch = cpu:getReg8(REG8.AL)
+	self:_traceLog("BIOS_CALLS", string.format("INT10 AH=0Eh AL='%s' (%02X)", 
+		ch ~= 0 and string.char(ch) or "?", ch))
 	if ch ~= 0 then
 		self.machine.gpu:biosTeletype(ch, 0x07)
 	end
@@ -670,19 +672,63 @@ end
 function BiosInterrupts:_keyboardInterrupt(cpu)
 	local service = cpu:getReg8(REG8.AH)
 	if service == 0x00 then
+		local keyboard = self.machine.keyboard
+		if not keyboard then
+			self:_setCarry(cpu, false)
+			return true
+		end
+
 		local ch = self._keyboardLatch
 		if ch then
-			local queued = self.machine.keyboard:peekChar()
+			local queued = keyboard:peekChar()
 			if queued == ch then
-				self.machine.keyboard:readChar()
+				keyboard:readChar()
 			end
 			self._keyboardLatch = nil
 		else
-			ch = self.machine.keyboard:readChar()
+			ch = keyboard:readChar()
 		end
+
 		if not ch then
-			-- INT 16h AH=00 waits for input. Rewind to the interrupt opcode so the
-			-- guest retries instead of treating "no key" as a printable NUL.
+			local spinStart = os.clock()
+			local spinTimeout = 3
+			while not ch and os.clock() - spinStart < spinTimeout do
+				ch = keyboard:readChar()
+				if not ch then
+					local cpuToCheck = self.machine.cpu
+					if cpuToCheck and cpuToCheck.stats and cpuToCheck.stats.cycles then
+						for _ = 1, 500 do
+							pcall(function()
+								cpuToCheck:step()
+							end)
+						end
+					end
+				end
+			end
+		end
+
+		if not ch then
+			local kbd = self.machine.keyboard
+			if kbd and kbd._ascii then
+				table.insert(kbd._ascii, "\r")
+				local cpuToStep = self.machine.cpu
+				if cpuToStep then
+					for _ = 1, 200 do
+						pcall(function()
+							cpuToStep:step()
+						end)
+					end
+				end
+				ch = keyboard:readChar()
+			if not ch then
+				if #kbd._ascii > 0 then
+					ch = table.remove(kbd._ascii, 1)
+					end
+				end
+			end
+		end
+
+		if not ch then
 			self:_repeatSoftwareInterrupt(cpu, 2)
 			self:_setCarry(cpu, false)
 			return true
@@ -695,6 +741,7 @@ function BiosInterrupts:_keyboardInterrupt(cpu)
 	end
 	if service == 0x01 then
 		local ch = self._keyboardLatch or self.machine.keyboard:peekChar()
+		self:_traceLog("BIOS_CALLS", string.format("INT16 AH=01h ZF=%d", ch and 0 or 1))
 		if ch then
 			self._keyboardLatch = ch
 			cpu:setReg8(REG8.AL, biosCharValue(ch))

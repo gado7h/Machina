@@ -998,6 +998,14 @@ function Cpu8086:step()
 	self._lastStep.cs = startCS
 	self._lastStep.ip = startIP
 
+	if self._trace and self._trace.CPU_STATE then
+		local linear = self:linearAddress(self.seg.CS, self.ip)
+		if linear >= 0x7C00 and linear < 0x8000 then
+			self.bus:_log("CPU", string.format("%04X:%04X (%05X) op=%02X", 
+				self.seg.CS, self.ip, linear, opcode))
+		end
+	end
+
 	if opcode >= 0xB8 and opcode <= 0xBF then
 		self:setReg16(opcode - 0xB8, self:fetch16())
 	elseif opcode >= 0xB0 and opcode <= 0xB7 then

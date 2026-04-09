@@ -1920,6 +1920,14 @@ function Cpu80386:_stepInternal()
 	self._lastStep.ip = startIP % 0x10000
 	self._lastStep.eip = startIP
 
+	if self._trace and self._trace.CPU_STATE then
+		local linear = self:linearAddress(self.seg.CS, self:_currentIP() % 0x10000)
+		if linear >= 0x7C00 and linear < 0x8000 then
+			self.bus:_log("CPU", string.format("%04X:%04X (%05X) op=%02X", 
+				self.seg.CS, startIP % 0x10000, linear, opcode))
+		end
+	end
+
 	if opcode == 0x0F then
 		local extended = self:fetch8()
 		self._lastStep.opcode = bit32.bor(0x0F00, extended)

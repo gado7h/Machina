@@ -257,6 +257,9 @@ function Pit8254:_fireIRQ(count)
 		self._bus:raiseIRQ(self.config.IRQ.TIMER, { source = "pit", channel = 0 })
 		self.stats.irqs = self.stats.irqs + 1
 	end
+	if self.stats.irqs % 1000 == 0 then
+		self._bus:_log("PIT", string.format("IRQ rate: %d total IRQs fired", self.stats.irqs))
+	end
 end
 
 function Pit8254:_tickChannel0(elapsedTicks)
