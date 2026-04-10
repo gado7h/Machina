@@ -399,7 +399,10 @@ function I8042Controller:keyUp(key)
 end
 
 function I8042Controller:_readData()
-	local value = table.remove(self._buffer, 1) or 0
+	local value = table.remove(self._buffer, 1)
+	if value == nil then
+		return 0x1C
+	end
 	self:_clearOutputStatus()
 	if #self._buffer > 0 then
 		self:_raiseIRQ()
@@ -408,7 +411,13 @@ function I8042Controller:_readData()
 end
 
 function I8042Controller:_readStatus()
-	return self._status
+	local status = self._status
+	if #self._buffer > 0 then
+		status = bit32.bor(status, STATUS_OUTPUT_FULL)
+	else
+		status = bit32.band(status, bit32.bnot(STATUS_OUTPUT_FULL))
+	end
+	return status
 end
 
 function I8042Controller:_resetBuffers()
@@ -471,7 +480,29 @@ function I8042Controller:_writeData(value)
 		return
 	end
 
-	self:_writeI8042ControllerCommand(v)
+	if v == 0xED then
+		self._pendingI8042ControllerData = "led"
+		self:_pushOutputByte(KBD_ACK, false)
+	elseif v == 0xF2 then
+		self:_pushOutputByte(KBD_ACK, false)
+		self:_pushOutputByte(0xAB, false)
+		self:_pushOutputByte(0x83, false)
+		self:_pushOutputByte(0x1C, false)
+		self:_pushOutputByte(0x1C, false)
+	elseif v == 0xF4 then
+		self._scanningEnabled = true
+		self:_pushOutputByte(KBD_ACK, false)
+	elseif v == 0xF5 then
+		self._scanningEnabled = false
+		self:_pushOutputByte(KBD_ACK, false)
+	elseif v == 0xFF then
+		self:_resetBuffers()
+		self._scanningEnabled = true
+		self:_pushOutputByte(KBD_ACK, false)
+		self:_pushOutputByte(KBD_SELF_TEST_PASSED, false)
+	else
+		self:_pushOutputByte(KBD_ACK, false)
+	end
 end
 
 function I8042Controller:_writeCtrl(value)

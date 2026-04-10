@@ -41,6 +41,41 @@ local function runLiveTest(waitSeconds)
 
 	machine:setFramePresenter(function() end)
 	machine:powerOn()
+	
+	task.wait(0.5)
+	
+	local vram = FrameCapture.getVRAMAddress(machine)
+	local frame
+	if vram then
+		local cells = {}
+		for i = 0, 80 * 25 - 1 do
+			local charAddr = i * 2
+			local attrAddr = charAddr + 1
+			local char = vram[charAddr] or 32
+			local attr = vram[attrAddr] or 7
+			cells[i + 1] = { char = char, attr = attr }
+		end
+		frame = { cells = cells, width = 80, height = 25, text = "" }
+	else
+		frame = { cells = {}, width = 80, height = 25 }
+	end
+	
+	if frame.cells and #frame.cells > 0 then
+		frame.text = formatFrameText(frame)
+	else
+		frame.text = ""
+	end
+	
+	print("=== Screen at 0.5s ===")
+	print(frame.text)
+	
+	task.wait(0.5)
+	
+	print(string.format("=== After 1 second ==="))
+	print("CPU stats: " .. tostring(machine.cpu and machine.cpu.stats or "nil"))
+	if machine.cpu and machine.cpu.stats then
+		print("Cycles: " .. tostring(machine.cpu.stats.cycles))
+	end
 
 	print(string.format("=== Live FreeDOS Screen (t=0.0) ==="))
 	print("Booting...")
