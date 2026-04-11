@@ -287,10 +287,16 @@ function BootController:startBoot()
 end
 
 function BootController:onDiskRead(startLba, _count, bufferAddress)
+	local currentStage = self.machine:getBootStage()
 	if startLba == 0 and bufferAddress == self._bootLinear then
 		self.machine:_setBootStage("BOOT")
-	elseif startLba >= (self.image.layout.kernelSectorStart - 1) and bufferAddress == self._kernelLinear then
+		print(string.format("[BOOT CTRL] onDiskRead LBA=%d buf=0x%X - BOOT stage set", startLba, bufferAddress))
+	elseif startLba > 0 and bufferAddress == self._kernelLinear then
 		self.machine:_setBootStage("KERNEL")
+		print(string.format("[BOOT CTRL] onDiskRead LBA=%d buf=0x%X - KERNEL stage set", startLba, bufferAddress))
+	else
+		print(string.format("[BOOT CTRL] onDiskRead LBA=%d buf=0x%X - no stage (boot=0x%X kernel=0x%X curr=%s)", 
+			startLba, bufferAddress, self._bootLinear, self._kernelLinear, currentStage))
 	end
 end
 
@@ -300,7 +306,8 @@ function BootController:_leftBootSector(pc)
 	local romSize = tonumber(self.x86.ROM_SIZE) or 0x10000
 	local inRom = linearPc >= romBase and linearPc < (romBase + romSize)
 	local inBootSector = linearPc >= self._bootLinear and linearPc < (self._bootLinear + 512)
-	return (not inRom) and not inBootSector
+	local inRelocatedBoot = linearPc >= 0x1FE0 * 16 and linearPc < (0x1FE0 * 16 + 512)
+	return (not inRom) and not inBootSector and not inRelocatedBoot
 end
 
 function BootController:tick(_dt)

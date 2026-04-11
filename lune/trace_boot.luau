@@ -49,7 +49,8 @@ local function getScreenText()
     return table.concat(lines, "\n")
 end
 
-while os.clock() - startTime < 8 do
+while os.clock() - startTime < 15 do
+    task.wait(0.1)
     local stage = machine:getBootStage()
     local elapsed = os.clock() - startTime
     

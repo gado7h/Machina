@@ -361,6 +361,7 @@ function BiosInterrupts:_floppyGetDriveParameters(cpu, drive)
 	cpu:setReg8(REG8.DH, dh)
 	cpu:setReg8(REG8.DL, 0x01)
 	cpu:setReg8(REG8.BL, MachineProfile.getFloppyDriveA(self.config).nibble)
+	self:_traceLog("DISK", string.format("INT 13h AH=08 floppy -> CH=%02X CL=%02X DH=%02X DL=%02X BL=%02X", ch, cl, dh, 0x01, MachineProfile.getFloppyDriveA(self.config).nibble))
 	self:_setCarry(cpu, false)
 	self:_setDiskStatus(cpu, 0x00)
 	self:_traceLog(
@@ -411,7 +412,7 @@ function BiosInterrupts:_readSectors(cpu)
 		self.runtime:onDiskRead(startLba, count, bufferAddress)
 	end
 
-	self:_traceLog("DISK", string.format("INT 13h AH=02 ATA drive=%02Xh lba=%d count=%d", drive, startLba, count))
+	self:_traceLog("DISK", string.format("INT 13h AH=02 ATA drive=%02Xh lba=%d count=%d -> SUCCESS AH=00", drive, startLba, count))
 	self:_setCarry(cpu, false)
 	self:_setDiskStatus(cpu, 0x00)
 	cpu:setReg8(REG8.AL, count)
@@ -457,7 +458,7 @@ function BiosInterrupts:_writeSectors(cpu)
 		self.machine.hdd:writeSector(startLba + sectorIndex, bytes)
 	end
 
-	self:_traceLog("DISK", string.format("INT 13h AH=03 ATA drive=%02Xh lba=%d count=%d", drive, startLba, count))
+	self:_traceLog("DISK", string.format("INT 13h AH=03 ATA drive=%02Xh lba=%d count=%d -> SUCCESS AH=00", drive, startLba, count))
 	self:_setCarry(cpu, false)
 	self:_setDiskStatus(cpu, 0x00)
 	cpu:setReg8(REG8.AL, count)
@@ -501,6 +502,7 @@ end
 
 function BiosInterrupts:_floppyDiskInterrupt(cpu, drive)
 	local service = cpu:getReg8(REG8.AH)
+	print(string.format("[INT13] floppy AH=%02Xh DL=%02X", service, drive))
 	self:_traceLog("BIOS_CALLS", string.format("INT 13h floppy service=%02Xh drive=%02Xh", service, drive))
 
 	if service == 0x00 then
@@ -601,7 +603,7 @@ function BiosInterrupts:_floppyReadSectors(cpu, drive)
 		self.runtime:onDiskRead(startLba, count, bufferAddress)
 	end
 
-	self:_traceLog("DISK", string.format("INT 13h AH=02 floppy drive=%02Xh lba=%d count=%d", drive, startLba, count))
+	self:_traceLog("DISK", string.format("INT 13h AH=02 floppy drive=%02Xh lba=%d count=%d -> SUCCESS AH=00", drive, startLba, count))
 	self:_setCarry(cpu, false)
 	self:_setDiskStatus(cpu, 0x00)
 	cpu:setReg8(REG8.AL, count)
@@ -662,7 +664,7 @@ function BiosInterrupts:_floppyWriteSectors(cpu, drive)
 		end
 	end
 
-	self:_traceLog("DISK", string.format("INT 13h AH=03 floppy drive=%02Xh lba=%d count=%d", drive, startLba, count))
+	self:_traceLog("DISK", string.format("INT 13h AH=03 floppy drive=%02Xh lba=%d count=%d -> SUCCESS AH=00", drive, startLba, count))
 	self:_setCarry(cpu, false)
 	self:_setDiskStatus(cpu, 0x00)
 	cpu:setReg8(REG8.AL, count)
@@ -687,45 +689,6 @@ function BiosInterrupts:_keyboardInterrupt(cpu)
 			self._keyboardLatch = nil
 		else
 			ch = keyboard:readChar()
-		end
-
-		if not ch then
-			local spinStart = os.clock()
-			local spinTimeout = 3
-			while not ch and os.clock() - spinStart < spinTimeout do
-				ch = keyboard:readChar()
-				if not ch then
-					local cpuToCheck = self.machine.cpu
-					if cpuToCheck and cpuToCheck.stats and cpuToCheck.stats.cycles then
-						for _ = 1, 500 do
-							pcall(function()
-								cpuToCheck:step()
-							end)
-						end
-					end
-				end
-			end
-		end
-
-		if not ch then
-			local kbd = self.machine.keyboard
-			if kbd and kbd._ascii then
-				table.insert(kbd._ascii, "\r")
-				local cpuToStep = self.machine.cpu
-				if cpuToStep then
-					for _ = 1, 200 do
-						pcall(function()
-							cpuToStep:step()
-						end)
-					end
-				end
-				ch = keyboard:readChar()
-			if not ch then
-				if #kbd._ascii > 0 then
-					ch = table.remove(kbd._ascii, 1)
-					end
-				end
-			end
 		end
 
 		if not ch then

@@ -133,8 +133,8 @@ Config.PORT = {
 Config.X86 = {
 	MACHINE_PROFILE = "ibm-pc-386-bios-v2",
 	HEARTBEAT_HZ = DISPLAY_REFRESH_HZ,
-	BOOT_CYCLES_PER_TICK = 1536,
-	RUN_CYCLES_PER_TICK = 1024,
+	BOOT_CYCLES_PER_TICK = 2048,
+	RUN_CYCLES_PER_TICK = 2048,
 
 	ROM_BASE = MEMORY_LAYOUT.ROM_BASE,
 	ROM_SIZE = MEMORY_LAYOUT.ROM_SIZE,
@@ -161,7 +161,7 @@ Config.X86 = {
 	KERNEL_LOAD_OFF = 0x0000,
 
 	SECTORS_PER_TRACK = 18,
-	HEADS = 1,
+	HEADS = 2,
 
 	FLOPPY_A_PRESENT = true,
 	FLOPPY_A_TYPE = "35_1440k",
@@ -180,13 +180,13 @@ Config.X86 = {
 	DIAGNOSTICS = {
 		ENABLED = true,
 		PRINT_SUMMARY = true,
-	},
+},
 
 	TRACE = {
 		ENABLED = false,
 		CPU_STATE = false,
 		IRQ_ROUTING = false,
-		PORT_IO = false,
+	 PORT_IO = false,
 		BIOS_CALLS = false,
 		DISK = false,
 	},

@@ -76,7 +76,7 @@ function Cpu8086.new(bus, config)
 		DS = 0,
 	}
 	self.ip = 0
-	self.flags = 0x0002
+	self.flags = 0xF002
 	self.halted = false
 	self._bios = nil
 	self._lastError = nil
@@ -113,7 +113,7 @@ function Cpu8086:reset()
 	self.seg.SS = 0
 	self.seg.CS = self.x86.RESET_VECTOR_SEG or 0xF000
 	self.ip = self.x86.RESET_VECTOR_OFF or 0xFFF0
-	self.flags = 0x0002
+	self.flags = 0xF002
 	self.halted = false
 	self._interruptShadow = 0
 	self._lastError = nil
@@ -387,7 +387,7 @@ function Cpu8086:_effectiveAddress(decoded)
 		base = base + decoded.disp
 	end
 
-	return self:_applySegmentOverride(segment), base % 0x10000
+	return self:_applySegmentOverride(segment), base
 end
 
 function Cpu8086:_readRM8(decoded)
@@ -943,11 +943,10 @@ function Cpu8086:_invokeInterrupt(vector, _hardware)
 			local returnIP = self:pop16()
 			local returnCS = self:pop16()
 			local savedFlags = self:pop16()
-			local statusMask = bit32.bor(FLAG_CF, FLAG_ZF, FLAG_SF, FLAG_OF)
+			local statusMask = bit32.bor(FLAG_CF, FLAG_ZF, FLAG_SF, FLAG_OF, FLAG_IF, FLAG_DF, FLAG_AF, FLAG_PF)
 			self.ip = returnIP
 			self.seg.CS = returnCS
-			self.flags =
-				bit32.bor(bit32.band(savedFlags, bit32.bnot(statusMask)), bit32.band(self.flags, statusMask), 0x0002)
+			self.flags = bit32.bor(bit32.band(savedFlags, bit32.bnot(statusMask)), bit32.band(self.flags, statusMask))
 			self.stats.interrupts = self.stats.interrupts + 1
 			return true
 		end

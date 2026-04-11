@@ -294,14 +294,22 @@ function Fdc765:_executeReadSector()
 		return
 	end
 
+	local dmaAddr = self._bus and self._bus.getDmaAddress and self._bus:getDmaAddress(2)
+	if dmaAddr and dmaAddr > 0 then
+		for i = 1, SECTOR_SIZE do
+			self._bus:writePhysical8(dmaAddr + i - 1, data[i] or 0)
+		end
+	else
+		self._dataBuffer = {}
+		for i = 1, SECTOR_SIZE do
+			self._dataBuffer[i] = data[i] or 0
+		end
+	end
+
 	self._st0 = drive
 	self._st1 = 0
 	self._st2 = 0
-	self._dataBuffer = {}
-	for i = 1, SECTOR_SIZE do
-		self._dataBuffer[i] = data[i] or 0
-	end
-	self._msr = bit32.bor(MSR_READY, MSR_NON_DMA, MSR_DIRECTION, MSR_BUSY)
+	self._msr = bit32.bor(MSR_READY, MSR_DIRECTION, MSR_BUSY)
 	self._resultBuffer = {
 		self._st0,
 		self._st1,

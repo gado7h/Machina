@@ -401,7 +401,7 @@ end
 function I8042Controller:_readData()
 	local value = table.remove(self._buffer, 1)
 	if value == nil then
-		return 0x1C
+		return 0x00
 	end
 	self:_clearOutputStatus()
 	if #self._buffer > 0 then

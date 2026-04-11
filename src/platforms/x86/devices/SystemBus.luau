@@ -18,6 +18,9 @@ function SystemBus.new(config)
 	self._portmap = {} -- port_number -> handler function
 	self._irqLines = {} -- registered IRQ callbacks: irq_num -> {handler, device, count, active}
 	self._dmaQueue = {} -- pending DMA transfers
+	self._dmaAddr = { [0] = 0, [1] = 0, [2] = 0, [3] = 0 }
+	self._dmaPage = { [0] = 0, [1] = 0, [2] = 0, [3] = 0 }
+	self._dmaCount = { [0] = 0, [1] = 0, [2] = 0, [3] = 0 }
 	self._logs = {}
 	self._fault = nil
 	self._lastMemMapping = nil
@@ -62,6 +65,27 @@ function SystemBus.new(config)
 	end, function(v)
 		self._a20Enabled = (bit32.band(v, 0x02) ~= 0)
 	end, "Fast A20")
+
+	self:registerPort(0x00, nil, function(v) self._dmaAddr[0] = bit32.bor(bit32.band(self._dmaAddr[0], 0xFFFF00), v) end, "DMA0 addr")
+	self:registerPort(0x01, nil, function(v) self._dmaAddr[0] = bit32.bor(bit32.band(self._dmaAddr[0], 0x00FFFF), bit32.lshift(v, 8)) end, "DMA0 addr hi")
+	self:registerPort(0x02, nil, function(v) self._dmaAddr[1] = bit32.bor(bit32.band(self._dmaAddr[1], 0xFFFF00), v) end, "DMA1 addr")
+	self:registerPort(0x03, nil, function(v) self._dmaAddr[1] = bit32.bor(bit32.band(self._dmaAddr[1], 0x00FFFF), bit32.lshift(v, 8)) end, "DMA1 addr hi")
+	self:registerPort(0x04, nil, function(v) self._dmaAddr[2] = bit32.bor(bit32.band(self._dmaAddr[2], 0xFFFF00), v) end, "DMA2 addr")
+	self:registerPort(0x05, nil, function(v) self._dmaAddr[2] = bit32.bor(bit32.band(self._dmaAddr[2], 0x00FFFF), bit32.lshift(v, 8)) end, "DMA2 addr hi")
+	self:registerPort(0x06, nil, function(v) self._dmaAddr[3] = bit32.bor(bit32.band(self._dmaAddr[3], 0xFFFF00), v) end, "DMA3 addr")
+	self:registerPort(0x07, nil, function(v) self._dmaAddr[3] = bit32.bor(bit32.band(self._dmaAddr[3], 0x00FFFF), bit32.lshift(v, 8)) end, "DMA3 addr hi")
+	self:registerPort(0x08, nil, function(v) self._dmaCount[0] = bit32.bor(bit32.band(self._dmaCount[0], 0xFF00), v) end, "DMA0 count")
+	self:registerPort(0x09, nil, function(v) self._dmaCount[0] = bit32.bor(bit32.band(self._dmaCount[0], 0x00FF), bit32.lshift(v, 8)) end, "DMA0 count hi")
+	self:registerPort(0x0A, nil, function(v) self._dmaCount[1] = bit32.bor(bit32.band(self._dmaCount[1], 0xFF00), v) end, "DMA1 count")
+	self:registerPort(0x0B, nil, function(v) self._dmaCount[1] = bit32.bor(bit32.band(self._dmaCount[1], 0x00FF), bit32.lshift(v, 8)) end, "DMA1 count hi")
+	self:registerPort(0x0C, nil, function(v) self._dmaCount[2] = bit32.bor(bit32.band(self._dmaCount[2], 0xFF00), v) end, "DMA2 count")
+	self:registerPort(0x0D, nil, function(v) self._dmaCount[2] = bit32.bor(bit32.band(self._dmaCount[2], 0x00FF), bit32.lshift(v, 8)) end, "DMA2 count hi")
+	self:registerPort(0x0E, nil, function(v) self._dmaCount[3] = bit32.bor(bit32.band(self._dmaCount[3], 0xFF00), v) end, "DMA3 count")
+	self:registerPort(0x0F, nil, function(v) self._dmaCount[3] = bit32.bor(bit32.band(self._dmaCount[3], 0x00FF), bit32.lshift(v, 8)) end, "DMA3 count hi")
+	self:registerPort(0x81, nil, function(v) self._dmaPage[2] = bit32.band(v, 0xFF) end, "DMA page 2")
+	self:registerPort(0x82, nil, function(v) self._dmaPage[3] = bit32.band(v, 0xFF) end, "DMA page 3")
+	self:registerPort(0x87, nil, function(v) self._dmaPage[0] = bit32.band(v, 0xFF) end, "DMA page 0")
+	self:registerPort(0x83, nil, function(v) self._dmaPage[1] = bit32.band(v, 0xFF) end, "DMA page 1")
 
 	return self
 end
@@ -498,6 +522,13 @@ function SystemBus:_log(tag, msg)
 	if #self._logs > 500 then
 		table.remove(self._logs, 1)
 	end
+end
+
+function SystemBus:getDmaAddress(channel)
+	channel = channel or 2
+	local page = self._dmaPage[channel] or 0
+	local addr = self._dmaAddr[channel] or 0
+	return bit32.bor(bit32.lshift(bit32.band(page, 0xFF), 16), bit32.band(addr, 0xFFFF))
 end
 
 function SystemBus:getLog(n)
