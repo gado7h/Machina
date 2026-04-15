@@ -297,6 +297,10 @@ function BootController:onDiskRead(startLba, _count, bufferAddress)
 			self.machine.cpu:writePhysical8(0x1FE00 + i, byte)
 		end
 
+		-- Set DL=80 (hard disk) to make FreeDOS boot sector use LBA read path
+		-- This fixes the issue where DL=00 causes boot sector to skip INT 13h call
+		self.machine.cpu:setReg8(2, 0x80)
+
 	elseif startLba > 0 and bufferAddress == self._kernelLinear then
 		self.machine:_setBootStage("KERNEL")
 	end
