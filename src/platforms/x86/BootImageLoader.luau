@@ -2,7 +2,6 @@ local BootImageCatalog = require("@src/platforms/x86/BootImageCatalog")
 local BiosRom = require("@src/platforms/x86/BiosRom")
 local ImageCatalogUtils = require("@src/platforms/x86/ImageCatalogUtils")
 local MachineProfile = require("@src/platforms/x86/MachineProfile")
-local RawImageCatalog = require("@src/platforms/x86/RawImageCatalog")
 local ImportedImageCatalog = require("@src/platforms/x86/ImportedImageCatalog")
 
 local BootImageLoader = {}
@@ -81,9 +80,12 @@ local function providerImage(provider, config)
 	error("invalid external x86 image provider")
 end
 
-local function rawImage(rawEntry)
+local function rawImage(rawEntry, config)
 	if type(rawEntry) == "function" then
-		return rawEntry()
+		return rawEntry(config)
+	end
+	if type(rawEntry) == "table" and type(rawEntry.build) == "function" then
+		return rawEntry.build(config)
 	end
 	if type(rawEntry) == "table" then
 		return rawEntry
@@ -162,8 +164,8 @@ function BootImageLoader.load(config)
 
 	if source == "raw" then
 		local rawName = tostring(imageConfig.RAW_IMAGE or imageConfig.NAME or DEFAULT_IMAGE_NAME)
-		local entry = resolveEntry(RawImageCatalog, rawName, "unknown x86 raw image entry: ")
-		local image = rawImage(entry)
+		local entry = resolveEntry(BootImageCatalog, rawName, "unknown x86 raw image entry: ")
+		local image = providerImage(entry, config)
 		return normalizeImage(image, {
 			config = config,
 			source = "raw",

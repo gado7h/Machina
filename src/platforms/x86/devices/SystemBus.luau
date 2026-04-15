@@ -149,7 +149,10 @@ local function rawPortRead(self, port, width)
 		local ok, value = pcall(h.read)
 		if ok then
 			if self._trace.ENABLED == true and self._trace.PORT_IO == true then
-				self:_log("PORT", string.format("IN  %04Xh -> %02Xh (%s)", port, (tonumber(value) or 0) % 0x100, h.label))
+				self:_log(
+					"PORT",
+					string.format("IN  %04Xh -> %02Xh (%s)", port, (tonumber(value) or 0) % 0x100, h.label)
+				)
 			end
 			return (tonumber(value) or 0) % 0x100
 		end
@@ -157,7 +160,10 @@ local function rawPortRead(self, port, width)
 		local ok, value = pcall(h.read16)
 		if ok then
 			if self._trace.ENABLED == true and self._trace.PORT_IO == true then
-				self:_log("PORT", string.format("IN  %04Xh -> %04Xh (%s)", port, (tonumber(value) or 0) % 0x10000, h.label))
+				self:_log(
+					"PORT",
+					string.format("IN  %04Xh -> %04Xh (%s)", port, (tonumber(value) or 0) % 0x10000, h.label)
+				)
 			end
 			return (tonumber(value) or 0) % 0x10000
 		end
@@ -165,7 +171,10 @@ local function rawPortRead(self, port, width)
 		local ok, value = pcall(h.read32)
 		if ok then
 			if self._trace.ENABLED == true and self._trace.PORT_IO == true then
-				self:_log("PORT", string.format("IN  %04Xh -> %08Xh (%s)", port, (tonumber(value) or 0) % 0x100000000, h.label))
+				self:_log(
+					"PORT",
+					string.format("IN  %04Xh -> %08Xh (%s)", port, (tonumber(value) or 0) % 0x100000000, h.label)
+				)
 			end
 			return (tonumber(value) or 0) % 0x100000000
 		end

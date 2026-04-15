@@ -14,6 +14,8 @@ local STATUS_BSY = 0x80
 local ERROR_ABORT = 0x04
 local ERROR_IDNF = 0x10
 
+local CMD_RECALIBRATE = 0x01
+local CMD_SEEK = 0x02
 local CMD_READ = 0x20
 local CMD_WRITE = 0x30
 local CMD_IDENTIFY = 0xEC
@@ -315,25 +317,28 @@ function AtaController:_issueCommand(cmd)
 		return
 	end
 
-	local normalized = command
-	if command == 1 then
-		normalized = CMD_READ
-	elseif command == 2 then
-		normalized = CMD_WRITE
-	end
 	if
-		normalized ~= CMD_READ
-		and normalized ~= CMD_WRITE
-		and normalized ~= CMD_IDENTIFY
-		and normalized ~= CMD_FLUSH
+		command ~= CMD_RECALIBRATE
+		and command ~= CMD_SEEK
+		and command ~= CMD_READ
+		and command ~= CMD_WRITE
+		and command ~= CMD_IDENTIFY
+		and command ~= CMD_FLUSH
 	then
 		self:_setError(ERROR_ABORT)
 		return
 	end
 
+	if command == CMD_RECALIBRATE or command == CMD_SEEK then
+		self._status = bit32.bor(STATUS_DRDY, STATUS_DSC)
+		self:_clearError()
+		self:_raiseIRQ(command == CMD_RECALIBRATE and "recalibrate-complete" or "seek-complete", nil)
+		return
+	end
+
 	local lba = 0
 	local count = 1
-	if normalized ~= CMD_IDENTIFY and normalized ~= CMD_FLUSH then
+	if command ~= CMD_IDENTIFY and command ~= CMD_FLUSH then
 		lba = self:_currentLBA()
 		count = self:_currentSectorCount()
 		if lba == nil or lba < 0 or (lba + count - 1) >= self.totalSectors then
@@ -343,12 +348,12 @@ function AtaController:_issueCommand(cmd)
 	end
 
 	local latency = 0.001
-	if normalized ~= CMD_FLUSH then
+	if command ~= CMD_FLUSH then
 		latency = self:_estimateLatencySec(lba)
 	end
 
 	self._pending = {
-		cmd = normalized,
+		cmd = command,
 		lba = lba,
 		count = count,
 		remaining = latency,

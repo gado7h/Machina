@@ -289,6 +289,7 @@ function VgaAdapter.new(config)
 	for index = 0, 8 do
 		self._graphics[index] = 0
 	end
+	self._graphics[0x08] = 0xFF
 	self._attribute = {}
 	for index = 0, 0x14 do
 		self._attribute[index] = 0
@@ -320,7 +321,15 @@ function VgaAdapter.new(config)
 
 	-- Native buffer for WritePixelsBuffer â€” allocated once, reused every frame.
 	-- Layout: RGBA u8 bytes, row-major. Size = W * H * 4 bytes.
-	self._pixelBuffer = buffer.create(self.W * self.H * 4)
+	if buffer and buffer.create then
+		self._pixelBuffer = buffer.create(self.W * self.H * 4)
+	else
+		-- Fallback for non-Roblox Luau hosts: use a plain table
+		self._pixelBuffer = {}
+		for i = 0, self.W * self.H * 4 - 1 do
+			self._pixelBuffer[i] = 0
+		end
+	end
 	self._dirtyPixelRect = {
 		x0 = 0,
 		y0 = 0,
@@ -759,15 +768,32 @@ function VgaAdapter:_packPixelBuffer()
 	local W = self.W
 
 	local needed = W * self.H * 4
-	if buffer.len(pb) ~= needed then
-		pb = buffer.create(needed)
-		self._pixelBuffer = pb
-		self._dirtyPixelRect = {
-			x0 = 0,
-			y0 = 0,
-			x1 = W - 1,
-			y1 = self.H - 1,
-		}
+	local useBuffer = buffer and buffer.create
+	if useBuffer then
+		if buffer.len(pb) ~= needed then
+			pb = buffer.create(needed)
+			self._pixelBuffer = pb
+			self._dirtyPixelRect = {
+				x0 = 0,
+				y0 = 0,
+				x1 = W - 1,
+				y1 = self.H - 1,
+			}
+		end
+	else
+		if #pb ~= needed then
+			pb = {}
+			for i = 0, needed - 1 do
+				pb[i] = 0
+			end
+			self._pixelBuffer = pb
+			self._dirtyPixelRect = {
+				x0 = 0,
+				y0 = 0,
+				x1 = W - 1,
+				y1 = self.H - 1,
+			}
+		end
 	end
 
 	local rect = self._dirtyPixelRect
@@ -785,10 +811,17 @@ function VgaAdapter:_packPixelBuffer()
 			local r = math.floor(argb / 65536) % 256
 			local g = math.floor(argb / 256) % 256
 			local b = argb % 256
-			buffer.writeu8(pb, base, r)
-			buffer.writeu8(pb, base + 1, g)
-			buffer.writeu8(pb, base + 2, b)
-			buffer.writeu8(pb, base + 3, a)
+			if useBuffer then
+				buffer.writeu8(pb, base, r)
+				buffer.writeu8(pb, base + 1, g)
+				buffer.writeu8(pb, base + 2, b)
+				buffer.writeu8(pb, base + 3, a)
+			else
+				pb[base] = r
+				pb[base + 1] = g
+				pb[base + 2] = b
+				pb[base + 3] = a
+			end
 		end
 	end
 
@@ -1324,6 +1357,7 @@ function VgaAdapter:biosSetVideoMode(mode)
 		self._graphics[0x06] = 0x0C
 		self:clearScreen(0x07)
 	end
+	self._graphics[0x08] = 0xFF
 
 	self.stats.modeChanges = self.stats.modeChanges + 1
 	self._dirty = true

@@ -236,7 +236,11 @@ function MachineProfile.validateConfig(config)
 	local profile = MachineProfile.getMachineProfile(config)
 	assert(
 		profile == MachineProfile.LOCKED_PROFILE,
-		"unsupported x86 machine profile: " .. tostring(profile) .. " (expected " .. MachineProfile.LOCKED_PROFILE .. ")"
+		"unsupported x86 machine profile: "
+			.. tostring(profile)
+			.. " (expected "
+			.. MachineProfile.LOCKED_PROFILE
+			.. ")"
 	)
 
 	local bootOrder = MachineProfile.normalizeBootOrder(((config or {}).X86 or {}).BOOT_ORDER)

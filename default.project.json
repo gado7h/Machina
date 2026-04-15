@@ -1,0 +1,11 @@
+{
+    "name": "Machina",
+    "tree": {
+        "$className": "DataModel",
+        "ReplicatedStorage": {
+            "machina-roblox": {
+                "$path": "dist/machina-roblox"
+            }
+        }
+    }
+}

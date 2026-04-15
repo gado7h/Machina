@@ -4,7 +4,7 @@ local BiosRom = {}
 
 local function buildSource(config)
 	local x86 = config.X86 or {}
-	local bootDrive = x86.BOOT_DRIVE or 0x80
+	local bootDrive = if x86.BOOT_DRIVE ~= nil then x86.BOOT_DRIVE else 0x80
 	return table.concat({
 		"ORG 0x0100",
 		"START:",
@@ -28,6 +28,7 @@ local function buildSource(config)
 		"  MOV DX, " .. string.format("0x%04X", bootDrive),
 		"  INT 0x13",
 		"  JC BOOT_FAIL",
+		"  MOV DL, " .. string.format("0x%02X", bootDrive),
 		"  PUSH 0x0000",
 		"  PUSH 0x7C00",
 		"  RETF",
@@ -51,6 +52,8 @@ local function buildSource(config)
 		"  JMP PRINT_STRING",
 		"PRINT_DONE:",
 		"  RET",
+		"SYS_CONFIG_TABLE:",
+		"  DB 0x08, 0xFC, 0x00, 0x00, 0x70, 0x00, 0x00, 0x00",
 		"BIOS_BANNER:",
 		'  DB "Machina x86 BIOS", 13, 10, 0',
 		"BOOT_FAIL_MSG:",

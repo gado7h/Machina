@@ -2,7 +2,7 @@ local PcSystem = {}
 PcSystem.__index = PcSystem
 
 local MachineProfile = require("@src/platforms/x86/MachineProfile")
-local Task = require("@src/platforms/Task")
+local task = require("@src/task")
 
 local DEFAULT_PROFILE = "x86-bios"
 local RUN_CYCLES_PER_TICK = 256
@@ -184,7 +184,9 @@ function PcSystem:_buildHardware()
 	self.gpu = VgaAdapter.new(self.boardConfig)
 	self.hdd = AtaController.new(self.boardConfig)
 	self.cpu = Cpu80386.new(self.bus, self.boardConfig)
-	self.keyboard = I8042Controller.new(self.boardConfig, self.bus)
+	self.keyboard = I8042Controller.new(self.boardConfig, self.bus, function()
+		self:reboot()
+	end)
 	self.serial = Uart8250.new(self.boardConfig)
 	self.rtc = CmosRtc.new(self.boardConfig)
 
@@ -339,7 +341,7 @@ function PcSystem:_startHeartbeat()
 		self.bus:processDMA(heartbeatDt)
 		self:_stepCPU(heartbeatDt)
 		self:_toggleCursor(heartbeatDt)
-		Task.delay(heartbeatDt, stepTick)
+		task.delay(heartbeatDt, stepTick)
 	end
 
 	local function presentTick()
@@ -349,11 +351,11 @@ function PcSystem:_startHeartbeat()
 
 		self._lastPresentAt = os.clock()
 		self:presentFrame()
-		Task.delay(presentDt, presentTick)
+		task.delay(presentDt, presentTick)
 	end
 
-	Task.delay(heartbeatDt, stepTick)
-	Task.delay(presentDt, presentTick)
+	task.delay(heartbeatDt, stepTick)
+	task.delay(presentDt, presentTick)
 end
 
 function PcSystem:setFramePresenter(presentFrame)
@@ -433,7 +435,7 @@ end
 function PcSystem:reboot()
 	self:_powerDown(true)
 
-	Task.delay(0.5, function()
+	task.delay(0.5, function()
 		self:powerOn()
 	end)
 end

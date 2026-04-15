@@ -328,6 +328,8 @@ function State.snapshotMachine(machine)
 		bus = {
 			stats = State.copyStats(bus),
 			fault = State.deepCopy(bus and bus._fault),
+			_a20Enabled = bus and bus._a20Enabled,
+			_postCode = bus and bus._postCode,
 			pic = State.snapshotPIC(bus and bus.pic),
 			timer = State.snapshotTimer(bus and bus.timer),
 		},
@@ -431,6 +433,8 @@ function State.restoreMachine(machine, snapshot)
 	if machine.bus and snapshot.bus then
 		State.assignFields(machine.bus.stats, snapshot.bus.stats)
 		machine.bus._fault = State.deepCopy(snapshot.bus.fault)
+		machine.bus._a20Enabled = snapshot.bus._a20Enabled
+		machine.bus._postCode = snapshot.bus._postCode
 		State.restorePIC(machine.bus.pic, snapshot.bus.pic)
 		State.restoreTimer(machine.bus.timer, snapshot.bus.timer)
 	end

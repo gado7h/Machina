@@ -86,6 +86,7 @@ function Cpu8086.new(bus, config)
 		ip = 0,
 	}
 	self._segmentOverride = nil
+	self._interruptShadow = 0
 	self.stats = {
 		cycles = 0,
 		instructions = 0,
@@ -114,6 +115,7 @@ function Cpu8086:reset()
 	self.ip = self.x86.RESET_VECTOR_OFF or 0xFFF0
 	self.flags = 0x0002
 	self.halted = false
+	self._interruptShadow = 0
 	self._lastError = nil
 	self._lastStep.opcode = nil
 	self._lastStep.cs = self.seg.CS
@@ -121,6 +123,12 @@ function Cpu8086:reset()
 	self._segmentOverride = nil
 	for name in pairs(self.stats) do
 		self.stats[name] = 0
+	end
+end
+
+function Cpu8086:_advanceInterruptShadow()
+	if (self._interruptShadow or 0) > 0 then
+		self._interruptShadow = self._interruptShadow - 1
 	end
 end
 
@@ -909,6 +917,9 @@ function Cpu8086:_serviceExternalInterrupt()
 	if not self:getFlag(FLAG_IF) then
 		return false
 	end
+	if (self._interruptShadow or 0) > 0 then
+		return false
+	end
 	if not self.bus or type(self.bus.getPendingInterruptVector) ~= "function" then
 		return false
 	end
@@ -960,6 +971,8 @@ function Cpu8086:step()
 		return "INT"
 	end
 
+	self:_advanceInterruptShadow()
+
 	if self.halted then
 		return "HLT"
 	end
@@ -967,8 +980,13 @@ function Cpu8086:step()
 	local startIP = self.ip
 	local startCS = self.seg.CS
 	local repeatPrefix = nil
+	local prefixCount = 0
 	local opcode = self:fetch8()
 	while opcode == 0xF2 or opcode == 0xF3 or SEGMENT_PREFIX_TO_CODE[opcode] ~= nil do
+		prefixCount += 1
+		if prefixCount > 15 then
+			error("too many instruction prefix bytes")
+		end
 		if opcode == 0xF2 or opcode == 0xF3 then
 			repeatPrefix = opcode
 		else
@@ -998,8 +1016,10 @@ function Cpu8086:step()
 		self:setFlag(FLAG_CF, true)
 	elseif opcode == 0xFA then
 		self:setFlag(FLAG_IF, false)
+		self._interruptShadow = 0
 	elseif opcode == 0xFB then
 		self:setFlag(FLAG_IF, true)
+		self._interruptShadow = 1
 	elseif opcode == 0xFC then
 		self:setFlag(FLAG_DF, false)
 	elseif opcode == 0xFD then
@@ -1385,7 +1405,7 @@ function Cpu8086:step()
 		self.flags = bit32.bor(bit32.band(self:pop16(), FLAGS16_WRITE_MASK), 0x0002)
 	elseif opcode == 0x9E then
 		local ah = self:getReg8(4)
-		local newFlags = bit32.bor(bit32.band(self.flags, 0xFFFFFF00), ah)
+		local newFlags = bit32.bor(bit32.band(self.flags, 0xFF00), ah)
 		if bit32.band(ah, 0x80) ~= 0 then
 			newFlags = bit32.bor(newFlags, FLAG_SF)
 		else
@@ -1429,7 +1449,7 @@ function Cpu8086:step()
 		if bit32.band(self.flags, FLAG_CF) ~= 0 then
 			newFlags = bit32.bor(newFlags, 0x01)
 		end
-		self:setReg8(7, newFlags)
+		self:setReg8(4, newFlags)
 	elseif opcode == 0xCC then
 		self:_invokeInterrupt(3, false)
 	elseif opcode == 0xCE then

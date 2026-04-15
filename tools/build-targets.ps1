@@ -94,7 +94,7 @@ function Get-SharedSourceFiles() {
 	return Get-ChildItem -Path $sourceRoot -Recurse -File -Filter *.luau |
 		Where-Object {
 			$relative = Get-RelativeSourcePath $_.FullName
-			$relative -eq "DefaultConfiguration.luau" -or $relative -eq "Contracts.luau" -or $relative.StartsWith("platforms/")
+			(-not $relative.Contains("/")) -or $relative.StartsWith("platforms/")
 		}
 }
 
