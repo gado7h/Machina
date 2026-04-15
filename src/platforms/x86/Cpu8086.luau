@@ -87,6 +87,8 @@ function Cpu8086.new(bus, config)
 	}
 	self._segmentOverride = nil
 	self._interruptShadow = 0
+	self._pendingRedirect = nil
+	self._pendingBootRedirect = nil
 	self.stats = {
 		cycles = 0,
 		instructions = 0,
@@ -102,6 +104,18 @@ end
 
 function Cpu8086:attachBIOS(bios)
 	self._bios = bios
+end
+
+function Cpu8086:setRedirect(cs, ip)
+	self._pendingRedirect = { cs = cs, ip = ip }
+end
+
+function Cpu8086:getRedirect()
+	return self._pendingRedirect
+end
+
+function Cpu8086:clearRedirect()
+	self._pendingRedirect = nil
 end
 
 function Cpu8086:reset()
@@ -944,13 +958,21 @@ function Cpu8086:_invokeInterrupt(vector, _hardware)
 			local returnCS = self:pop16()
 			local savedFlags = self:pop16()
 			local statusMask = bit32.bor(FLAG_CF, FLAG_ZF, FLAG_SF, FLAG_OF, FLAG_IF, FLAG_DF, FLAG_AF, FLAG_PF)
-			self.ip = returnIP
-			self.seg.CS = returnCS
+			if self._pendingRedirect then
+				self.ip = self._pendingRedirect.ip
+				self.seg.CS = self._pendingRedirect.cs
+				self._pendingRedirect = nil
+			else
+				self.ip = returnIP
+				self.seg.CS = returnCS
+			end
 			self.flags = bit32.bor(bit32.band(savedFlags, bit32.bnot(statusMask)), bit32.band(self.flags, statusMask))
 			self.stats.interrupts = self.stats.interrupts + 1
 			return true
 		end
 	end
+
+	self._pendingRedirect = nil
 
 	local ivt = vector * 4
 	local offset = self:readPhysical16(ivt)

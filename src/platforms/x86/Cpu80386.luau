@@ -349,7 +349,8 @@ function Cpu80386:setReg8(code, value)
 end
 
 function Cpu80386:getLinearPC()
-	return self:linearAddress("CS", self:_currentIP())
+	local ip = self:_currentIP()
+	return self:linearAddress("CS", ip)
 end
 
 function Cpu80386:getStats()
@@ -1528,8 +1529,17 @@ function Cpu80386:_segmentCacheFor(segment)
 end
 
 function Cpu80386:linearAddress(segment, offset)
+	local segVal
+	if type(segment) == "string" then
+		segVal = self.seg[segment]
+	else
+		segVal = segment
+	end
+	
+	local result
 	if not self.protectedMode then
-		return (((tonumber(segment) or 0) % 0x10000) * 16 + ((tonumber(offset) or 0) % 0x10000)) % 0x100000000
+		result = (((tonumber(segVal) or 0) % 0x10000) * 16 + ((tonumber(offset) or 0) % 0x10000)) % 0x100000000
+		return result
 	end
 
 	local descriptor = self:_segmentCacheFor(segment)

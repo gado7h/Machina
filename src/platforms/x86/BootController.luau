@@ -174,7 +174,7 @@ function BootController:_loadBootMedia(image, device)
 	if device == "floppy" then
 		assert(self.machine.fdc ~= nil, "boot order selected floppy but the FDC is unavailable")
 		local bytes = sectorsToBytes(image.sectors)
-		assert(type(self.machine.fdc.loadImage) == "function", "FDC cannot accept raw image bytes")
+		assert(type(self.machine.fdc.loadImage) == "function", "FDC cannot accept raw byte image")
 		self.machine.fdc:loadImage(bytes)
 		self:_traceLog("DISK", string.format("loaded %d bytes into floppy drive A:", #bytes))
 		return
@@ -287,16 +287,18 @@ function BootController:startBoot()
 end
 
 function BootController:onDiskRead(startLba, _count, bufferAddress)
-	local currentStage = self.machine:getBootStage()
 	if startLba == 0 and bufferAddress == self._bootLinear then
 		self.machine:_setBootStage("BOOT")
-		print(string.format("[BOOT CTRL] onDiskRead LBA=%d buf=0x%X - BOOT stage set", startLba, bufferAddress))
+
+		-- Copy boot sector + extended boot code (8KB) to 0x1FE0:0000
+		-- FreeDOS boot sector relocated area includes main boot + extended code
+		for i = 0, 8191 do
+			local byte = self.machine.cpu:readPhysical8(bufferAddress + i)
+			self.machine.cpu:writePhysical8(0x1FE00 + i, byte)
+		end
+
 	elseif startLba > 0 and bufferAddress == self._kernelLinear then
 		self.machine:_setBootStage("KERNEL")
-		print(string.format("[BOOT CTRL] onDiskRead LBA=%d buf=0x%X - KERNEL stage set", startLba, bufferAddress))
-	else
-		print(string.format("[BOOT CTRL] onDiskRead LBA=%d buf=0x%X - no stage (boot=0x%X kernel=0x%X curr=%s)", 
-			startLba, bufferAddress, self._bootLinear, self._kernelLinear, currentStage))
 	end
 end
 
@@ -306,7 +308,7 @@ function BootController:_leftBootSector(pc)
 	local romSize = tonumber(self.x86.ROM_SIZE) or 0x10000
 	local inRom = linearPc >= romBase and linearPc < (romBase + romSize)
 	local inBootSector = linearPc >= self._bootLinear and linearPc < (self._bootLinear + 512)
-	local inRelocatedBoot = linearPc >= 0x1FE0 * 16 and linearPc < (0x1FE0 * 16 + 512)
+	local inRelocatedBoot = linearPc >= 0x1FE00 and linearPc < 0x20000
 	return (not inRom) and not inBootSector and not inRelocatedBoot
 end
 

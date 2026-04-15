@@ -223,6 +223,7 @@ end
 
 function PcSystem:_recordRuntimeInitFault(err)
 	self:_setBootStage("FAULT", tostring(err))
+	print(string.format("[PCSYSTEM] Runtime init FAULT: %s", tostring(err)))
 	if self.gpu then
 		self.gpu:hostClear(FAULT_TEXT_ATTR)
 		self.gpu:hostWriteLine("runtime init failed", FAULT_TEXT_ATTR)

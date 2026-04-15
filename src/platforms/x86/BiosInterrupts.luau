@@ -502,8 +502,6 @@ end
 
 function BiosInterrupts:_floppyDiskInterrupt(cpu, drive)
 	local service = cpu:getReg8(REG8.AH)
-	print(string.format("[INT13] floppy AH=%02Xh DL=%02X", service, drive))
-	self:_traceLog("BIOS_CALLS", string.format("INT 13h floppy service=%02Xh drive=%02Xh", service, drive))
 
 	if service == 0x00 then
 		self:_setCarry(cpu, false)
@@ -539,6 +537,10 @@ function BiosInterrupts:_floppyDiskInterrupt(cpu, drive)
 		self:_setCarry(cpu, true)
 		self:_setDiskStatus(cpu, 0x01)
 		return true
+	end
+
+	if service == 0x42 then
+		return self:_floppyReadSectorsLba(cpu, drive)
 	end
 
 	self:_setCarry(cpu, true)
@@ -603,7 +605,63 @@ function BiosInterrupts:_floppyReadSectors(cpu, drive)
 		self.runtime:onDiskRead(startLba, count, bufferAddress)
 	end
 
-	self:_traceLog("DISK", string.format("INT 13h AH=02 floppy drive=%02Xh lba=%d count=%d -> SUCCESS AH=00", drive, startLba, count))
+	self:_setCarry(cpu, false)
+	self:_setDiskStatus(cpu, 0x00)
+	cpu:setReg8(REG8.AL, count)
+	return true
+end
+
+function BiosInterrupts:_floppyReadSectorsLba(cpu, drive)
+	local count = cpu:getReg8(REG8.AL)
+	local bufferSegment = cpu:getReg16(REG16.DS)
+	local bufferOffset = cpu:getReg16(REG16.BX)
+	local bufferAddress = bufferSegment * 16 + bufferOffset
+
+	local fdc = self.machine.fdc
+	if not fdc then
+		self:_setCarry(cpu, true)
+		self:_setDiskStatus(cpu, 0x04)
+		return true
+	end
+
+	if not self:_isSupportedFloppyDrive(drive) then
+		self:_setCarry(cpu, true)
+		self:_setDiskStatus(cpu, 0x01)
+		return true
+	end
+
+	local media = fdc.getMediaType and fdc:getMediaType() or nil
+	local totalSectors = 80 * 2 * 18
+	if count <= 0 or count > 36 or count > totalSectors then
+		self:_setCarry(cpu, true)
+		self:_setDiskStatus(cpu, 0x04)
+		return true
+	end
+
+	local startLba = cpu:getReg16(REG16.CX) + cpu:getReg16(REG16.DX) * 65536
+
+	if startLba < 0 or startLba + count > totalSectors then
+		self:_setCarry(cpu, true)
+		self:_setDiskStatus(cpu, 0x04)
+		return true
+	end
+
+	if self.runtime and type(self.runtime.onDiskRead) == "function" then
+		self.runtime:onDiskRead(startLba, count, bufferAddress)
+	end
+
+	for sectorIndex = 0, count - 1 do
+		local sectorData = fdc:readSector(startLba + sectorIndex)
+		if not sectorData then
+			self:_setCarry(cpu, true)
+			self:_setDiskStatus(cpu, 0x04)
+			return true
+		end
+		for i = 1, 512 do
+			cpu:writePhysical8(bufferAddress + sectorIndex * 512 + i - 1, sectorData[i])
+		end
+	end
+
 	self:_setCarry(cpu, false)
 	self:_setDiskStatus(cpu, 0x00)
 	cpu:setReg8(REG8.AL, count)
@@ -703,7 +761,12 @@ function BiosInterrupts:_keyboardInterrupt(cpu)
 		return true
 	end
 	if service == 0x01 then
-		local ch = self._keyboardLatch or self.machine.keyboard:peekChar()
+		local keyboard = self.machine.keyboard
+		if not keyboard then
+			self:_setCarry(cpu, false)
+			return true
+		end
+		local ch = self._keyboardLatch or keyboard:peekChar()
 		self:_traceLog("BIOS_CALLS", string.format("INT16 AH=01h ZF=%d", ch and 0 or 1))
 		if ch then
 			self._keyboardLatch = ch
