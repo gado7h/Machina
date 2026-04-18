@@ -3,18 +3,26 @@
 
 ---
 
-**Current Status: Phase 1 - INCOMPLETE**
+**Current Status: Phase 1 - NOT STARTED**
+
+The initial refactor attempt created some files but they were incomplete and didn't work. The emulator still uses the original `src/platforms/x86/` structure which works correctly.
+
+This plan details how to properly implement Phase 1.
 
 ---
 
 ## Executive Summary
 
-The original refactor created a new structure at `src/` (without platforms/x86), but:
-1. The new `machine.luau` doesn't actually boot FreeDOS - it creates hardware but doesn't run boot
-2. Tests still rely on the old `platforms/x86/PcSystem` API for real boot
-3. The new structure is incomplete - needs proper device initialization and bootrom
+**What Happened:**
+- Attempted to refactor src/platforms/x86/ to new structure (src/target/, src/hw/, etc.)
+- Created ~60 new files but none actually boot FreeDOS
+- Tests continue using old `platforms/x86/PcSystem` API which works
+- Phase 1 was never actually completed
 
-This plan details how to complete Phase 1 properly.
+**Current Working Code:**
+- `src/platforms/x86/` - 31 files that work correctly
+- `lune/smoke.luau` - Works, FreeDOS boots
+- All diagnostics pass (12/12)
 
 ---
 
