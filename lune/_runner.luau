@@ -83,17 +83,20 @@ function Runner.newConfig(overrides)
 end
 
 function Runner.createBootMachine(overrides)
-	local PcSystem = require("@src/platforms/x86/PcSystem")
+	local Machina = require("@src/Machina")
 	local config = Runner.newConfig(overrides)
-	local machine = PcSystem.new(config)
-	machine:setFramePresenter(function() end)
-	return machine, config
+	local emulator = Machina.createEmulator({
+		target = "x86-i486-pc",
+		config = config,
+	})
+	emulator:setFramePresenter(function() end)
+	return emulator.machine, config, emulator
 end
 
 function Runner.createDiagnosticMachine(overrides)
-	local machine, config = Runner.createBootMachine(overrides)
+	local machine, config, emulator = Runner.createBootMachine(overrides)
 	machine:_buildHardware()
-	return machine, config
+	return machine, config, emulator
 end
 
 function Runner.waitForBoot(machine, options)

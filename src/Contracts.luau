@@ -3,9 +3,12 @@ local Contracts = {}
 Contracts.Package = "machina"
 
 Contracts.EntryPoints = {
+	api = "@src/Machina",
 	config = "@src/DefaultConfiguration",
 	machine = "@src/platforms/x86/PcSystem",
+	i486Machine = "@src/targets/x86/i486/I486Emulator",
 	platformContracts = "@src/Contracts",
+	packageManifest = "@src/packaging/PackageManifest",
 }
 
 Contracts.ManifestFormats = {
